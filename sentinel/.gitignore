@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+env/
+venv/
+*.env
+
+# Node
+node_modules/
+build/
+dist/
+*.log
+
+# Data
+demo_cache/
+evaluation/
+backend/data/ecss/*.pdf
