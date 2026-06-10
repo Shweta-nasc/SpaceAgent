@@ -38,7 +38,7 @@ def make_hypotheses(
         Hypothesis(
             rank=1,
             root_cause="EPS_POWER_FAULT",
-            component="SOLAR_ARRAY_A",
+            affected_component="SOLAR_ARRAY_A",
             confidence=c1,
             causal_chain=[
                 "I_sa drops to 0A in sunlight",
@@ -50,7 +50,7 @@ def make_hypotheses(
         Hypothesis(
             rank=2,
             root_cause="ADCS_GYRO_SEU",
-            component="GYRO_A",
+            affected_component="GYRO_A",
             confidence=c2,
             causal_chain=[
                 "SEU counter spike",
@@ -60,7 +60,7 @@ def make_hypotheses(
         Hypothesis(
             rank=3,
             root_cause="OBC_WATCHDOG_OVERFLOW",
-            component="OBC_MAIN",
+            affected_component="OBC_MAIN",
             confidence=c3,
             causal_chain=[
                 "CPU load spike",
