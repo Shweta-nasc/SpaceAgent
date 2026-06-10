@@ -104,7 +104,7 @@ class Hypothesis(BaseModel):
         min_length=3,
         description="Fault class, e.g. EPS_POWER_FAULT, ADCS_GYRO_SEU",
     )
-    component: str = Field(
+    affected_component: str = Field(
         ...,
         min_length=2,
         description="Affected component, e.g. SOLAR_ARRAY_A, GYRO_A",
@@ -129,6 +129,18 @@ class Hypothesis(BaseModel):
     def round_confidence(cls, v: float) -> float:
         """Keep confidence to 2 decimal places for clean display."""
         return round(v, 2)
+
+    @field_validator("causal_chain")
+    @classmethod
+    def validate_causal_chain(cls, value: List[str]) -> List[str]:
+        cleaned = [item.strip() for item in value]
+
+        if any(not item for item in cleaned):
+            raise ValueError(
+                "causal_chain entries must be non-empty strings"
+            )
+
+        return cleaned
 
 
 class SentinelOutput(BaseModel):
@@ -187,6 +199,18 @@ class SentinelOutput(BaseModel):
     def round_confidence(cls, v: float) -> float:
         return round(v, 2)
 
+    @field_validator("reasoning_summary")
+    @classmethod
+    def validate_reasoning_summary(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError(
+                "reasoning_summary must not be blank"
+            )
+
+        return value
+
     @model_validator(mode="after")
     def validate_output_invariants(self) -> "SentinelOutput":
         """Enforce the contract invariants documented above."""
@@ -209,7 +233,24 @@ class SentinelOutput(BaseModel):
                     f"({sorted_by_rank[i+1].confidence})"
                 )
 
-        # --- Invariant 3: auto-set requires_human_review ---
+        # --- Invariant 3: recovery steps must be sequential ---
+        step_numbers = [step.step for step in self.recovery_plan]
+
+        expected_steps = list(
+            range(
+                1,
+                len(self.recovery_plan) + 1
+            )
+        )
+
+        if step_numbers != expected_steps:
+            raise ValueError(
+                f"Recovery steps must be sequential "
+                f"{expected_steps}, got {step_numbers}"
+            )
+
+
+        # --- Invariant 4: auto-set requires_human_review ---
         has_high_risk = any(
             s.risk in (RiskLevel.HIGH, RiskLevel.BLOCKED)
             for s in self.recovery_plan
@@ -218,6 +259,13 @@ class SentinelOutput(BaseModel):
         if should_flag and not self.requires_human_review:
             # Auto-correct rather than reject — safer for hackathon reliability
             object.__setattr__(self, "requires_human_review", True)
+
+        elif not should_flag and self.requires_human_review:
+            object.__setattr__(
+                self,
+                "requires_human_review",
+                False
+            )
 
         # --- Invariant 5: overall confidence matches rank-1 ---
         top_hyp = next(h for h in self.hypotheses if h.rank == 1)
