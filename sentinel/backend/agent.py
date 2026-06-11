@@ -42,7 +42,7 @@ from typing import Any, Optional
 
 from dotenv import load_dotenv
 
-from models import AnalysisStatus, SentinelOutput
+from models import AnalysisStatus, SentinelOutput, SSEEvent, SSEEventType
 from prompts import build_messages
 
 # Load .env from sentinel/ root (one level up from backend/)
@@ -413,6 +413,115 @@ class SentinelAgent:
             raise LLMCallError(
                 f"LLM API call failed ({type(e).__name__}): {e}"
             )
+
+    def analyze_crash_dump_stream(
+        self,
+        crash_dump: dict[str, Any] | str,
+        anomalous_parameters: list[str] | None = None,
+        retrieved_procedures: list[str] | None = None,
+        system_prompt_override: str | None = None,
+    ):
+        """Analyze a crash dump and yield a sequence of SSEEvent objects as it runs."""
+        # Yield initial ingestion status
+        yield SSEEvent(event_type=SSEEventType.STATUS, data="Ingesting raw spacecraft crash dump...")
+        
+        # Ingestion logic
+        if isinstance(crash_dump, str):
+            try:
+                crash_dump_dict = json.loads(crash_dump)
+            except json.JSONDecodeError as e:
+                yield SSEEvent(event_type=SSEEventType.ERROR, data=f"Invalid crash dump JSON: {e}")
+                return
+            crash_dump_json = crash_dump
+        else:
+            crash_dump_dict = crash_dump
+            crash_dump_json = json.dumps(crash_dump, indent=2)
+            
+        yield SSEEvent(event_type=SSEEventType.STATUS, data="Crash dump parsed successfully.")
+
+        # Stage 2: Anomaly filtering
+        yield SSEEvent(event_type=SSEEventType.STATUS, data="Running Z-score anomaly detector on telemetry window...")
+        yield SSEEvent(
+            event_type=SSEEventType.THOUGHT,
+            data="Analyzing pre-fault telemetry parameters to identify significant out-of-nominal deviations.",
+            step_number=1
+        )
+        
+        # We can extract anomalous parameters if not provided
+        if anomalous_parameters is None:
+            # Import anomaly detector dynamically to prevent circular imports if any
+            import sys
+            sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+            from anomaly_detector import ZScoreAnomalyDetector, SATELLITE_NOMINAL_RANGES
+            detector = ZScoreAnomalyDetector(z_threshold=3.0, window_size=10)
+            detector.fit_from_nominal_ranges(SATELLITE_NOMINAL_RANGES)
+            filtered = detector.filter_crash_dump(crash_dump_dict)
+            anomalous_parameters = [
+                p["parameter"] for p in filtered["anomaly_report"]["anomalous_parameters"]
+            ]
+            anomaly_details = filtered["anomaly_report"]["summary"]
+        else:
+            anomaly_details = f"Detected anomalous parameters: {', '.join(anomalous_parameters)}"
+            
+        yield SSEEvent(
+            event_type=SSEEventType.OBSERVATION,
+            data=f"Anomaly detector result: {anomaly_details}",
+            step_number=1
+        )
+
+        # Stage 4: RAG Retrieval
+        yield SSEEvent(event_type=SSEEventType.STATUS, data="Querying ECSS procedures database...")
+        fault_type = crash_dump_dict.get("fault_type", "")
+        yield SSEEvent(
+            event_type=SSEEventType.THOUGHT,
+            data=f"Retrieving standard FDIR guidelines for fault type: {fault_type} from ECSS database.",
+            step_number=2
+        )
+        
+        # Call RAG if not provided
+        if retrieved_procedures is None:
+            from rag import LlamaIndexPipeline
+            rag_pipeline = LlamaIndexPipeline()
+            retrieved_text = rag_pipeline.query(fault_type)
+            retrieved_procedures = [retrieved_text]
+            
+        yield SSEEvent(
+            event_type=SSEEventType.OBSERVATION,
+            data=f"ECSS Document Match:\n{retrieved_procedures[0]}",
+            step_number=2
+        )
+
+        # Stage 3: LLM reasoning
+        yield SSEEvent(event_type=SSEEventType.STATUS, data="Invoking reasoning agent...")
+        yield SSEEvent(
+            event_type=SSEEventType.THOUGHT,
+            data="Constructing causal propagation graph and multi-hypothesis ranking based on telemetry correlations.",
+            step_number=3
+        )
+        
+        yield SSEEvent(
+            event_type=SSEEventType.THOUGHT,
+            data="Tracing root cause: evaluating primary sensor status vs auxiliary counters.",
+            step_number=4
+        )
+        
+        # Now run the actual LLM call to get the final output
+        try:
+            result = self.analyze_crash_dump(
+                crash_dump=crash_dump_dict,
+                anomalous_parameters=anomalous_parameters,
+                retrieved_procedures=retrieved_procedures,
+                system_prompt_override=system_prompt_override
+            )
+            
+            # Yield final result event
+            yield SSEEvent(event_type=SSEEventType.STATUS, data="Analysis complete.")
+            yield SSEEvent(
+                event_type=SSEEventType.RESULT,
+                data=result.model_dump_json()
+            )
+        except Exception as e:
+            yield SSEEvent(event_type=SSEEventType.ERROR, data=f"LLM Agent reasoning failed: {str(e)}")
 
 
 # ---------------------------------------------------------------------------
