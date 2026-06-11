@@ -38,31 +38,47 @@ sentinel/
 ├── .gitignore
 ├── .env.example          ← GEMINI_API_KEY=your_gemini_key_here
 ├── backend/
-│   ├── main.py           ← FastAPI app
+│   ├── main.py           ← FastAPI app (Steps 4+5+6 pipeline wired)
 │   ├── agent.py          ← Gemini-first reasoning agent
 │   ├── models.py         ← Pydantic output schema (SentinelOutput)
 │   ├── prompts.py        ← Master system prompt + builders
-│   ├── rag.py            ← Hybrid RAG (PDF + fallback KB)
-│   ├── simulator.py      ← Crash dump simulator (placeholder)
-│   ├── evaluator.py      ← Evaluation harness (placeholder)
+│   ├── rag.py            ← Hybrid RAG (PDF RAG + fallback KB)
+│   ├── simulator.py      ← Crash dump generator (SENTINEL schema)
+│   ├── evaluator.py      ← 8-metric evaluation harness
 │   ├── requirements.txt
 │   ├── Dockerfile
 │   └── data/ecss/        ← ECSS PDF standards
 ├── frontend/             ← React application
 ├── notebooks/            ← Kaggle fine-tuning notebooks
-├── demo_cache/           ← Pre-computed demo responses
-├── evaluation/           ← Evaluation results
 └── docs/                 ← Architecture diagrams
 ```
+
+## Step Status
+
+| Step | Description | Status |
+|---|---|---|
+| 1 | Pydantic output schema (`models.py`) | ✅ Complete |
+| 2 | Master system prompt (`prompts.py`) | ✅ Complete |
+| 3 | Agent skeleton (`agent.py`) | ✅ Complete |
+| 4 | Fallback KB retrieval (`rag.py`) | ✅ Complete |
+| 5 | Structured output validation (`models.py` + agent retry) | ✅ Complete |
+| 6 | PDF RAG integration (`rag.py` + ChromaDB) | ✅ Complete |
+| 7 | Safety command whitelist (`safety.py`) | ❌ Not yet built |
+| 9+ | LangGraph tool routing | ❌ Future |
+| 11 | SSE streaming endpoint | ❌ Future |
 
 ## Setup
 
 ```bash
-python -m venv sentinel-env
-source sentinel-env/bin/activate
-pip install google-genai langchain langgraph llama-index chromadb
-pip install fastapi uvicorn pydantic numpy scipy httpx python-dotenv
-pip install sentence-transformers
+pip install -r backend/requirements.txt
+```
+
+Or manually:
+
+```bash
+pip install google-genai fastapi uvicorn pydantic python-dotenv
+pip install sentence-transformers chromadb llama-index
+pip install numpy scipy httpx
 ```
 
 ### Environment
@@ -91,10 +107,15 @@ print(resp.text)
 ```python
 from agent import SentinelAgent, AgentConfig, ModelMode
 
-# Default: Gemini Flash
+# Default: Gemini Flash + RAG (Steps 4+5+6 in one call)
 agent = SentinelAgent()
-result = agent.analyze_crash_dump(crash_dump_dict)
+result = agent.analyze_with_rag(crash_dump_dict)
 print(result.model_dump_json(indent=2))
+
+# Or manual: retrieve first, then analyze
+from rag import retrieve_procedures
+procedures = retrieve_procedures(query="gyro SEU fault", fault_cues=["GYRO_A_RATE"])
+result = agent.analyze_crash_dump(crash_dump_dict, retrieved_procedures=procedures)
 
 # Tuned model
 config = AgentConfig(mode=ModelMode.TUNED, tuned_model_id="tunedModels/sentinel-v1")
@@ -103,6 +124,24 @@ agent = SentinelAgent(config)
 # Fallback (local Phi-3-mini via Ollama)
 config = AgentConfig(mode=ModelMode.FALLBACK)
 agent = SentinelAgent(config)
+```
+
+### HTTP API
+
+```bash
+# Start the server
+cd backend && uvicorn main:app --reload
+
+# Submit a crash dump
+curl -X POST http://localhost:8000/analyze \
+  -H 'Content-Type: application/json' \
+  -d '{"crash_dump": {"scenario_id": "TEST_001", "fault_type": "ADCS_SENSOR_FAULT", ...}}'
+
+# Health check
+curl http://localhost:8000/health
+
+# RAG status
+curl http://localhost:8000/rag/status
 ```
 
 ## Risks

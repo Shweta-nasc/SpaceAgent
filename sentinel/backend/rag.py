@@ -128,6 +128,8 @@ _KB_ADCS_GYRO_SEU = KBEntry(
         "NaN", "attitude_error", "ATTITUDE_ERROR", "ADCS",
         "gyro", "gyroscope", "cosmic_ray", "radiation",
         "ADCS_ERROR_THRESHOLD", "attitude",
+        # anomaly_detector.py parameter names
+        "Gyro_rate_degs", "Attitude_error_deg", "gyro_rate",
     ),
     content="""\
 PROCEDURE: ADCS Gyroscope Single-Event Upset (SEU) Recovery
@@ -778,6 +780,18 @@ def _try_pdf_rag(query: str, top_k: int = DEFAULT_TOP_K) -> list[str] | None:
         if not doc_text or len(doc_text.strip()) < 20:
             continue
 
+        # Filter garbled/binary text from scanned PDFs
+        # If >30% of chars are non-printable ASCII, skip this chunk
+        printable_ratio = sum(
+            1 for c in doc_text if 32 <= ord(c) < 127 or c in ('\n', '\t', '\r')
+        ) / max(len(doc_text), 1)
+        if printable_ratio < 0.70:
+            logger.debug(
+                "Skipping garbled chunk (printable_ratio=%.2f): %.40r",
+                printable_ratio, doc_text
+            )
+            continue
+
         # Extract metadata
         meta = metadatas[i] if i < len(metadatas) else {}
         source = meta.get("source", "ECSS standard")
@@ -865,9 +879,12 @@ def _retrieve_from_fallback(
 
     Scoring:
       - Each trigger cue that appears in (query + fault_cues) adds 1 point
-      - Case-insensitive matching
+      - Case-insensitive substring matching
       - Entries are ranked by score, top_k returned
-      - If no entry scores > 0, returns MULTI_CASCADE as catch-all
+      - If fewer than top_k entries match, pads with the next best entries
+        (score=0 entries included to meet top_k) so callers always get
+        the requested number of entries when KB is large enough.
+      - If no entry scores > 0, returns MULTI_CASCADE as the first entry
     """
     combined_text = query.lower()
     if fault_cues:
@@ -881,25 +898,36 @@ def _retrieve_from_fallback(
         )
         scored.append((score, entry))
 
-    # Sort by score descending, then by original order for ties
+    # Sort by score descending, preserving original order for equal scores
     scored.sort(key=lambda x: x[0], reverse=True)
 
-    # Filter to entries that actually matched
-    matched = [entry for score, entry in scored if score > 0]
+    # Find the best-matching entries
+    matched_positive = [entry for score, entry in scored if score > 0]
 
-    if not matched:
-        # Always return something — MULTI_CASCADE is the safest default
-        # because it tells the LLM to look for the initiating fault
+    if not matched_positive:
+        # No entries matched — always lead with MULTI_CASCADE catch-all,
+        # then pad with other KB entries up to top_k
         logger.info(
             "No KB entries matched query/cues — returning MULTI_CASCADE "
             "as catch-all"
         )
-        matched = [_KB_MULTI_CASCADE]
+        results: list[KBEntry] = [_KB_MULTI_CASCADE]
+        for _score, entry in scored:
+            if entry.fault_class != "MULTI_CASCADE" and len(results) < top_k:
+                results.append(entry)
+        return [entry.content for entry in results[:top_k]]
 
-    # Trim to top_k
-    results = matched[:top_k]
+    # Have some matched entries; pad with next-best if needed
+    if len(matched_positive) >= top_k:
+        return [entry.content for entry in matched_positive[:top_k]]
 
-    return [entry.content for entry in results]
+    # Fewer matches than requested: add unmatched entries in order
+    results_with_data: list[KBEntry] = list(matched_positive)
+    matched_classes = {e.fault_class for e in matched_positive}
+    for _score, entry in scored:
+        if entry.fault_class not in matched_classes and len(results_with_data) < top_k:
+            results_with_data.append(entry)
+    return [entry.content for entry in results_with_data[:top_k]]
 
 
 def retrieve_by_fault_class(

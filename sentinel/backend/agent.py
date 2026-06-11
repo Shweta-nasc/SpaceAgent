@@ -1,7 +1,8 @@
 """
 SENTINEL — Reasoning Agent Core (agent.py)
 
-Gemini-first, model-agnostic reasoning agent that:
+Gemini-first, model-agnostic reasoning agent implementing the full
+STEPS 4-6 pipeline:
   1. Accepts crash dump input (dict or JSON string)
   2. Assembles messages via prompts.build_messages()
   3. Calls the LLM (Gemini Flash by default, with tuned and fallback branches)
@@ -20,25 +21,25 @@ pipeline: build_messages → call_llm → parse_json → validate. Only the
 LLM call layer changes per mode. This keeps the architecture simple
 and the demo safe.
 
-Design decisions:
-  - NO LangGraph at this stage. The Master Planner (Section F.1, Risk #2)
-    explicitly lists "LangGraph too complex to set up" as a medium-probability
-    risk with the fallback: "Start with simple function chain:
-    parse() → retrieve() → llm_call() → validate() — same result, no
-    framework." This IS that fallback, built as a clean upgrade path.
-  - LangGraph can be layered on top later (Step 9+) when we add tool routing
-    for query_telemetry, retrieve_procedure, check_safety, propose_recovery.
+Completed integration points:
+  - Step 4: fallback KB retrieval via rag.retrieve_procedures(use_pdf_rag=False)
+  - Step 5: structured output schema validation via SentinelOutput (models.py)
+  - Step 6: PDF RAG retrieval via rag.retrieve_procedures(use_pdf_rag=True)
+  - Retry logic with repair prompt is active
 
-Integration points (future steps):
-  - Step 4: fallback KB → pass as retrieved_procedures
-  - Step 6: real RAG → pass as retrieved_procedures
-  - Step 7: safety.py → post-process SentinelOutput.recovery_plan
-  - Step 8: retry logic is already here
-  - Step 11: SSE → yield events from analyze_crash_dump_stream() (future)
+Convenience wrapper:
+  - analyze_with_rag(): combines RAG retrieval + analyze_crash_dump() in one call
+    Use this from main.py or evaluation scripts instead of calling both separately.
+
+Future integration points:
+  - Step 7: safety.py command whitelist validation
+  - Step 9+: LangGraph tool routing (query_telemetry, check_safety, propose_recovery)
+  - Step 11: SSE streaming via analyze_crash_dump_stream()
 
 Imports from our own modules:
   - models.py  → SentinelOutput, AnalysisStatus
   - prompts.py → build_messages
+  - rag.py     → retrieve_procedures (lazy import to avoid circular)
 """
 
 from __future__ import annotations
@@ -578,28 +579,114 @@ class SentinelAgent:
             )
 
 
+    def analyze_with_rag(
+        self,
+        crash_dump: dict[str, Any] | str,
+        anomalous_parameters: list[str] | None = None,
+        fault_cues: list[str] | None = None,
+        top_k: int = 3,
+        use_pdf_rag: bool = True,
+        system_prompt_override: str | None = None,
+    ) -> SentinelOutput:
+        """Convenience wrapper: retrieve procedures via RAG then analyze.
+
+        This combines Steps 4, 5, and 6 in a single call:
+          1. Build a retrieval query from crash_dump + fault_cues
+          2. Call rag.retrieve_procedures() (PDF RAG → fallback KB)
+          3. Pass retrieved procedures to analyze_crash_dump()
+          4. Return validated SentinelOutput
+
+        Use this from main.py and evaluation scripts instead of calling
+        retrieve_procedures() and analyze_crash_dump() separately.
+
+        Args:
+            crash_dump: Crash dump as dict or JSON string.
+            anomalous_parameters: Optional z-score anomaly detector output
+                (parameter names that are statistically anomalous).
+            fault_cues: Optional additional keyword hints for RAG retrieval
+                (e.g. trigger code, subsystem names).
+            top_k: Max procedure snippets to retrieve (default 3).
+            use_pdf_rag: If True, try PDF RAG before fallback KB.
+            system_prompt_override: Optional ablation study override.
+
+        Returns:
+            SentinelOutput — validated structured diagnostic output.
+        """
+        # Lazy import rag to avoid module-level circular dependency
+        from rag import retrieve_procedures
+
+        # Normalize crash dump to dict for query building
+        if isinstance(crash_dump, str):
+            try:
+                crash_dict = json.loads(crash_dump)
+            except json.JSONDecodeError:
+                crash_dict = {}
+        else:
+            crash_dict = crash_dump
+
+        # Build retrieval query from crash dump fields + cues
+        query_parts: list[str] = []
+        trigger = crash_dict.get("safe_mode_trigger", "")
+        fault_type = crash_dict.get("fault_type", "")
+        scenario_id = crash_dict.get("scenario_id", "")
+        if trigger:
+            query_parts.append(trigger)
+        if fault_type:
+            query_parts.append(fault_type)
+        if scenario_id:
+            query_parts.append(scenario_id)
+
+        # Combine all cue sources for retrieval
+        all_cues = list(anomalous_parameters or []) + list(fault_cues or [])
+        query = " ".join(query_parts) or "spacecraft safe mode recovery"
+
+        # Retrieve procedure context (Step 4: fallback KB / Step 6: PDF RAG)
+        retrieved_procedures = retrieve_procedures(
+            query=query,
+            fault_cues=all_cues or None,
+            top_k=top_k,
+            use_pdf_rag=use_pdf_rag,
+        )
+
+        logger.info(
+            "analyze_with_rag: retrieved %d procedure(s) for query: %.60s",
+            len(retrieved_procedures), query,
+        )
+
+        # Run LLM reasoning with retrieved context (Step 5: validation)
+        return self.analyze_crash_dump(
+            crash_dump=crash_dump,
+            anomalous_parameters=anomalous_parameters,
+            retrieved_procedures=retrieved_procedures,
+            system_prompt_override=system_prompt_override,
+        )
+
+
 # ---------------------------------------------------------------------------
-# Future tool-node hooks
+# Tool-node hooks (Step 7+ stubs — genuinely future work)
 # ---------------------------------------------------------------------------
 #
-# These will become actual functions / LangGraph tool nodes:
+# Steps 4, 5, and 6 are complete and wired:
+#   - Step 4: retrieve_procedures(use_pdf_rag=False) in rag.py
+#   - Step 5: SentinelOutput validation in models.py + agent.py retry loop
+#   - Step 6: retrieve_procedures(use_pdf_rag=True) in rag.py
+#
+# The following are genuinely future (Step 7+) and NOT yet implemented:
+#
+# def check_safety(command: str) -> bool:
+#     """Step 7: validate a recovery command against the safety whitelist.
+#     Implemented in safety.py (not yet built)."""
+#     ...
 #
 # def query_telemetry(state: AgentState, param: str) -> str:
-#     """Read a specific parameter from the crash dump."""
-#     ...
-#
-# def retrieve_procedure(state: AgentState, query: str) -> str:
-#     """RAG retrieval over ECSS documents via rag.py."""
-#     ...
-#
-# def check_safety(state: AgentState, command: str) -> str:
-#     """Validate a command against the safety whitelist."""
+#     """Step 9+: Read a specific parameter from the crash dump.
+#     Will be a LangGraph tool node."""
 #     ...
 #
 # def propose_recovery(state: AgentState) -> SentinelOutput:
-#     """Generate final output with multi-hypothesis ranking."""
+#     """Step 9+: Final output with multi-hypothesis ranking.
+#     Will be a LangGraph tool node."""
 #     ...
 #
-# Future Step: add SSE streaming wrapper for analyze_crash_dump
-# Future Step: auto-route to tuned model for repeated fault classes
-# Future Step: add cached demo fallback for offline/rate-limited scenarios
+# Future Step 11: add SSE streaming wrapper for analyze_crash_dump
+# analyze_crash_dump_stream() yielding events from each pipeline stage

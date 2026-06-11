@@ -341,12 +341,24 @@ finally:
 # ═══════════════════════════════════════════════════════════════════════════
 print("\n🧪 TEST 15: Missing PDFs → graceful fallback")
 
-reset_rag_state()
+# Reset state and clear persisted ChromaDB collection before testing missing-dir fallback.
+# ChromaDB persists to disk independently of ECSS_DATA_DIR, so we must explicitly
+# delete the collection to ensure no stale index is reused when the PDF dir is missing.
 import rag as rag_module
 original_dir = rag_module.ECSS_DATA_DIR
 rag_module.ECSS_DATA_DIR = "/tmp/nonexistent_ecss_dir_12345"
+reset_rag_state()
 try:
-    # Even with use_pdf_rag=True, should fall back
+    import chromadb as _chromadb_15
+    _c15 = _chromadb_15.PersistentClient(path=rag_module.CHROMA_DB_DIR)
+    try:
+        _c15.delete_collection(rag_module.CHROMA_COLLECTION_NAME)
+    except Exception:
+        pass
+except Exception:
+    pass
+try:
+    # With no PDFs and no persisted index, should fall back to FALLBACK_KB
     results = retrieve_procedures(
         query="gyro fault", fault_cues=["GYRO_A_RATE"],
         top_k=2, use_pdf_rag=True,
@@ -356,6 +368,7 @@ try:
           "SEU" in results[0] or "gyro" in results[0].lower())
 finally:
     rag_module.ECSS_DATA_DIR = original_dir
+    reset_rag_state()  # Clean up so subsequent tests can re-init from real dir
 
 
 # ═══════════════════════════════════════════════════════════════════════════
