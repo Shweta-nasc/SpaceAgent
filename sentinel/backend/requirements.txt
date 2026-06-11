@@ -1,4 +1,23 @@
+# Core
 fastapi>=0.110.0
 uvicorn[standard]>=0.23.0
 pydantic>=2.8.0
 python-dotenv>=1.0.0
+
+# LLM — Gemini (primary hosted path)
+google-genai>=1.0.0
+
+# LLM — Fallback/local models via OpenAI-compatible API (Ollama, vLLM)
+# openai>=1.0.0  # uncomment if using fallback mode
+
+# Embeddings — local, free, no API key needed
+sentence-transformers>=2.2.0
+
+# RAG / Vector store
+chromadb>=0.4.0
+llama-index>=0.10.0
+
+# Utilities
+numpy>=1.24.0
+scipy>=1.10.0
+httpx>=0.24.0

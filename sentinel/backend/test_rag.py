@@ -303,42 +303,37 @@ check("Status source is fallback_kb", status.last_source == "fallback_kb")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# TEST 14: Missing API key → graceful fallback
+# TEST 14: Missing sentence-transformers → graceful fallback
 # ═══════════════════════════════════════════════════════════════════════════
-print("\n🧪 TEST 14: Missing OPENAI_API_KEY → graceful fallback")
+print("\n🧪 TEST 14: Missing embedding fn → graceful fallback")
 
 reset_rag_state()
-with patch.dict(os.environ, {"OPENAI_API_KEY": ""}, clear=False):
-    # Remove OPENAI_API_KEY
-    env_backup = os.environ.pop("OPENAI_API_KEY", None)
-    try:
-        success = initialize_pdf_rag()
-        check("initialize_pdf_rag returns False without API key", not success)
-        status = get_rag_status()
-        check("Status shows unavailable", not status.available)
-        check("Error mentions API key or embedding",
-              status.last_error is not None and (
-                  "key" in status.last_error.lower()
-                  or "embed" in status.last_error.lower()
-              ))
-    finally:
-        if env_backup:
-            os.environ["OPENAI_API_KEY"] = env_backup
+import rag as rag_module
+# Mock the embedding function to return None (simulating missing sentence-transformers)
+original_fn = rag_module._get_embedding_fn
+rag_module._get_embedding_fn = lambda: None
+try:
+    success = initialize_pdf_rag()
+    check("initialize_pdf_rag returns False without embeddings", not success)
+    status = get_rag_status()
+    check("Status shows unavailable", not status.available)
+    check("Error mentions embedding",
+          status.last_error is not None and "embed" in status.last_error.lower())
+finally:
+    rag_module._get_embedding_fn = original_fn
 
 # Retrieval should still work via fallback
 reset_rag_state()
-with patch.dict(os.environ, {}, clear=False):
-    env_backup = os.environ.pop("OPENAI_API_KEY", None)
-    try:
-        results = retrieve_procedures(
-            query="gyro fault", fault_cues=["GYRO_A_RATE"],
-            top_k=2, use_pdf_rag=True,
-        )
-        check("Retrieval works without API key (via fallback)",
-              len(results) >= 1)
-    finally:
-        if env_backup:
-            os.environ["OPENAI_API_KEY"] = env_backup
+rag_module._get_embedding_fn = lambda: None
+try:
+    results = retrieve_procedures(
+        query="gyro fault", fault_cues=["GYRO_A_RATE"],
+        top_k=2, use_pdf_rag=True,
+    )
+    check("Retrieval works without embeddings (via fallback)",
+          len(results) >= 1)
+finally:
+    rag_module._get_embedding_fn = original_fn
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -401,7 +396,7 @@ check("After reset: source = not_initialized",
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# TEST 19: PDF RAG live test (conditional — only if PDFs + API key exist)
+# TEST 19: PDF RAG live test (conditional — only if PDFs + sentence-transformers exist)
 # ═══════════════════════════════════════════════════════════════════════════
 print("\n🧪 TEST 19: PDF RAG live test (conditional)")
 
@@ -409,11 +404,15 @@ has_pdfs = os.path.isdir(ECSS_DATA_DIR) and any(
     f.endswith(".pdf") for f in os.listdir(ECSS_DATA_DIR)
 ) if os.path.isdir(ECSS_DATA_DIR) else False
 
-has_api_key = bool(os.environ.get("OPENAI_API_KEY", "")) and \
-    os.environ.get("OPENAI_API_KEY", "") != "sk-xxx"
+# Check if sentence-transformers is available
+try:
+    from sentence_transformers import SentenceTransformer
+    has_embeddings = True
+except ImportError:
+    has_embeddings = False
 
-if has_pdfs and has_api_key:
-    print("  ℹ️  PDFs and API key detected — running live RAG test")
+if has_pdfs and has_embeddings:
+    print("  ℹ️  PDFs and sentence-transformers detected — running live RAG test")
     reset_rag_state()
     try:
         success = initialize_pdf_rag(force_rebuild=True)
@@ -459,22 +458,10 @@ if has_pdfs and has_api_key:
             check("PDF RAG results integrate with build_messages",
                   len(messages) == 2)
         else:
-            # Init failed — could be API quota, rate limit, etc.
-            # This is NOT a code bug — it's an account/billing issue.
-            # Verify graceful fallback works.
+            # Init failed — could be chromadb issue, import error, etc.
             status = get_rag_status()
-            is_quota_issue = status.last_error and (
-                "429" in status.last_error
-                or "quota" in status.last_error.lower()
-                or "rate" in status.last_error.lower()
-            )
-            if is_quota_issue:
-                print(f"  ⚠️  API quota/rate limit hit — not a code bug")
-                print(f"  ⚠️  Error: {status.last_error[:100]}...")
-                check("Init failed due to API quota (not code bug)", True)
-            else:
-                print(f"  ⚠️  PDF RAG init failed: {status.last_error}")
-                check("Init failed — check error above", False)
+            print(f"  ⚠️  PDF RAG init failed: {status.last_error}")
+            check("Init failed — check error above", False)
 
             # Either way, verify fallback works
             results = retrieve_procedures(
@@ -498,8 +485,8 @@ else:
     reasons = []
     if not has_pdfs:
         reasons.append("no PDFs in data/ecss/")
-    if not has_api_key:
-        reasons.append("no OPENAI_API_KEY")
+    if not has_embeddings:
+        reasons.append("sentence-transformers not installed")
     print(f"  ⏭️  Skipping live RAG test ({', '.join(reasons)})")
     check("Live test skipped gracefully", True)
 
@@ -528,9 +515,14 @@ pdfs_found = os.path.isdir(ECSS_DATA_DIR) and any(
 check(f"PDFs available in data/ecss/: {pdfs_found}",
       True)  # Informational
 
-key_set = bool(os.environ.get("OPENAI_API_KEY", "")) and \
-    os.environ.get("OPENAI_API_KEY", "") != "sk-xxx"
-check(f"OPENAI_API_KEY set: {key_set}", True)  # Informational
+# Embeddings now use sentence-transformers (local, free, no API key)
+# Check if sentence-transformers is available for reporting
+try:
+    import sentence_transformers
+    st_available = True
+except ImportError:
+    st_available = False
+check(f"sentence-transformers available: {st_available}", True)  # Informational
 
 print("\n  INTEGRATION:")
 check("retrieve_procedures() returns list[str]", True)
@@ -548,7 +540,7 @@ print(f"Results: {passed} passed, {failed} failed")
 print(f"KB entries: {len(FALLBACK_KB)}")
 print(f"Total KB content: {sum(len(e.content) for e in FALLBACK_KB):,} chars")
 print(f"PDFs in data/ecss/: {'Yes' if pdfs_found else 'No'}")
-print(f"OPENAI_API_KEY: {'Set' if key_set else 'Not set'}")
+print(f"Embeddings: sentence-transformers ({'available' if st_available else 'not installed'})")
 print(f"{'='*60}")
 
 if failed > 0:

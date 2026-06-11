@@ -378,7 +378,7 @@ def build_messages(
 ) -> list[dict[str, str]]:
     """Build the complete messages list for an LLM chat completion call.
 
-    Returns the standard OpenAI-compatible messages format:
+    Returns the standard chat-completion messages format:
       [{"role": "system", "content": ...}, {"role": "user", "content": ...}]
 
     This is the function agent.py will import and call directly.
@@ -392,7 +392,7 @@ def build_messages(
             Default: uses the full SYSTEM_PROMPT.
 
     Returns:
-        List of message dicts ready for openai.chat.completions.create()
+        List of message dicts ready for Gemini, Ollama, or any
         or equivalent LangGraph LLM call.
     """
     system_content = system_prompt_override or SYSTEM_PROMPT

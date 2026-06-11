@@ -3,7 +3,8 @@ SENTINEL — Retrieval & Knowledge Base (rag.py)
 
 Hybrid retrieval layer with two paths:
   1. FALLBACK_KB  → always available, covers all 6 fault types, zero deps
-  2. PDF RAG      → loads ECSS PDFs via LlamaIndex, embeds with OpenAI,
+  2. PDF RAG      → loads ECSS PDFs via LlamaIndex, embeds with
+                    sentence-transformers (all-MiniLM-L6-v2, local/free),
                     stores/queries via ChromaDB (local persistent mode)
 
 The public API is:
@@ -17,7 +18,7 @@ Retrieval priority (when use_pdf_rag=True):
 
 Graceful degradation guarantees:
   - Missing PDFs                → fallback KB
-  - Missing OPENAI_API_KEY      → fallback KB
+  - sentence-transformers missing → fallback KB
   - LlamaIndex import error     → fallback KB
   - ChromaDB error              → fallback KB
   - PDF parsing failure         → skip bad PDF, index the rest
@@ -59,7 +60,7 @@ CHROMA_COLLECTION_NAME = "ecss_procedures"
 DEFAULT_TOP_K = 3
 CHUNK_SIZE = 512        # Tokens per chunk — good for technical docs
 CHUNK_OVERLAP = 50      # Overlap to preserve context across boundaries
-EMBEDDING_MODEL = "text-embedding-3-small"  # Cheap, fast, good enough
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # Free, local, no API key needed
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -485,35 +486,28 @@ _FAULT_CLASS_QUERIES: dict[str, str] = {
 # SECTION 4 — PDF RAG INITIALIZATION
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _get_openai_embedding_fn() -> Any:
-    """Create an OpenAI embedding function for ChromaDB.
+def _get_embedding_fn() -> Any:
+    """Create a sentence-transformers embedding function for ChromaDB.
 
-    Returns None (triggering fallback) if:
-      - OPENAI_API_KEY is not set
-      - chromadb embedding utilities are not importable
+    Uses all-MiniLM-L6-v2 (free, local, no API key needed).
+    Returns None (triggering fallback KB) if sentence-transformers or
+    chromadb embedding utilities are not importable.
     """
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    if not api_key or api_key == "sk-xxx":
-        logger.info("No valid OPENAI_API_KEY found — PDF RAG will not embed")
-        return None
-
     # Try the standard chromadb embedding function import path
     try:
         from chromadb.utils.embedding_functions import (
-            OpenAIEmbeddingFunction,
+            SentenceTransformerEmbeddingFunction,
         )
-        return OpenAIEmbeddingFunction(
-            api_key=api_key,
+        return SentenceTransformerEmbeddingFunction(
             model_name=EMBEDDING_MODEL,
         )
     except (ImportError, Exception) as e:
-        logger.warning("Could not create OpenAI embedding fn: %s", e)
+        logger.warning("Could not create sentence-transformers embedding fn: %s", e)
 
     # Fallback import path for older/newer chromadb versions
     try:
         from chromadb.utils import embedding_functions as ef_module
-        return ef_module.OpenAIEmbeddingFunction(
-            api_key=api_key,
+        return ef_module.SentenceTransformerEmbeddingFunction(
             model_name=EMBEDDING_MODEL,
         )
     except (ImportError, Exception) as e:
@@ -639,10 +633,10 @@ def initialize_pdf_rag(force_rebuild: bool = False) -> bool:
     _rag_status.initialized = True
 
     # --- Step 1: Get embedding function ---
-    _embedding_fn = _get_openai_embedding_fn()
+    _embedding_fn = _get_embedding_fn()
     if _embedding_fn is None:
         _rag_status.available = False
-        _rag_status.last_error = "No OpenAI API key or embedding fn unavailable"
+        _rag_status.last_error = "sentence-transformers or embedding fn unavailable"
         logger.info("PDF RAG skipped: %s", _rag_status.last_error)
         return False
 
