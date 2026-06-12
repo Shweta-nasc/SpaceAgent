@@ -1,12 +1,11 @@
 # Python
-__pycache__/
+_pycache_/
 *.py[cod]
 *.pyo
 *.pyd
 env/
 venv/
 *.env
-/venv
 
 # Node
 node_modules/
@@ -19,3 +18,6 @@ demo_cache/
 evaluation/
 backend/data/ecss/*.pdf
 
+*.bin
+*.pickle
+*.sqlite3

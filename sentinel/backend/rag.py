@@ -3,7 +3,8 @@ SENTINEL — Retrieval & Knowledge Base (rag.py)
 
 Hybrid retrieval layer with two paths:
   1. FALLBACK_KB  → always available, covers all 6 fault types, zero deps
-  2. PDF RAG      → loads ECSS PDFs via LlamaIndex, embeds with OpenAI,
+  2. PDF RAG      → loads ECSS PDFs via LlamaIndex, embeds with
+                    sentence-transformers (all-MiniLM-L6-v2, local/free),
                     stores/queries via ChromaDB (local persistent mode)
 
 The public API is:
@@ -17,7 +18,7 @@ Retrieval priority (when use_pdf_rag=True):
 
 Graceful degradation guarantees:
   - Missing PDFs                → fallback KB
-  - Missing OPENAI_API_KEY      → fallback KB
+  - sentence-transformers missing → fallback KB
   - LlamaIndex import error     → fallback KB
   - ChromaDB error              → fallback KB
   - PDF parsing failure         → skip bad PDF, index the rest
@@ -59,7 +60,7 @@ CHROMA_COLLECTION_NAME = "ecss_procedures"
 DEFAULT_TOP_K = 3
 CHUNK_SIZE = 512        # Tokens per chunk — good for technical docs
 CHUNK_OVERLAP = 50      # Overlap to preserve context across boundaries
-EMBEDDING_MODEL = "text-embedding-3-small"  # Cheap, fast, good enough
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # Free, local, no API key needed
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -127,6 +128,8 @@ _KB_ADCS_GYRO_SEU = KBEntry(
         "NaN", "attitude_error", "ATTITUDE_ERROR", "ADCS",
         "gyro", "gyroscope", "cosmic_ray", "radiation",
         "ADCS_ERROR_THRESHOLD", "attitude",
+        # anomaly_detector.py parameter names
+        "Gyro_rate_degs", "Attitude_error_deg", "gyro_rate",
     ),
     content="""\
 PROCEDURE: ADCS Gyroscope Single-Event Upset (SEU) Recovery
@@ -485,35 +488,28 @@ _FAULT_CLASS_QUERIES: dict[str, str] = {
 # SECTION 4 — PDF RAG INITIALIZATION
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _get_openai_embedding_fn() -> Any:
-    """Create an OpenAI embedding function for ChromaDB.
+def _get_embedding_fn() -> Any:
+    """Create a sentence-transformers embedding function for ChromaDB.
 
-    Returns None (triggering fallback) if:
-      - OPENAI_API_KEY is not set
-      - chromadb embedding utilities are not importable
+    Uses all-MiniLM-L6-v2 (free, local, no API key needed).
+    Returns None (triggering fallback KB) if sentence-transformers or
+    chromadb embedding utilities are not importable.
     """
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    if not api_key or api_key == "sk-xxx":
-        logger.info("No valid OPENAI_API_KEY found — PDF RAG will not embed")
-        return None
-
     # Try the standard chromadb embedding function import path
     try:
         from chromadb.utils.embedding_functions import (
-            OpenAIEmbeddingFunction,
+            SentenceTransformerEmbeddingFunction,
         )
-        return OpenAIEmbeddingFunction(
-            api_key=api_key,
+        return SentenceTransformerEmbeddingFunction(
             model_name=EMBEDDING_MODEL,
         )
     except (ImportError, Exception) as e:
-        logger.warning("Could not create OpenAI embedding fn: %s", e)
+        logger.warning("Could not create sentence-transformers embedding fn: %s", e)
 
     # Fallback import path for older/newer chromadb versions
     try:
         from chromadb.utils import embedding_functions as ef_module
-        return ef_module.OpenAIEmbeddingFunction(
-            api_key=api_key,
+        return ef_module.SentenceTransformerEmbeddingFunction(
             model_name=EMBEDDING_MODEL,
         )
     except (ImportError, Exception) as e:
@@ -639,10 +635,10 @@ def initialize_pdf_rag(force_rebuild: bool = False) -> bool:
     _rag_status.initialized = True
 
     # --- Step 1: Get embedding function ---
-    _embedding_fn = _get_openai_embedding_fn()
+    _embedding_fn = _get_embedding_fn()
     if _embedding_fn is None:
         _rag_status.available = False
-        _rag_status.last_error = "No OpenAI API key or embedding fn unavailable"
+        _rag_status.last_error = "sentence-transformers or embedding fn unavailable"
         logger.info("PDF RAG skipped: %s", _rag_status.last_error)
         return False
 
@@ -784,6 +780,18 @@ def _try_pdf_rag(query: str, top_k: int = DEFAULT_TOP_K) -> list[str] | None:
         if not doc_text or len(doc_text.strip()) < 20:
             continue
 
+        # Filter garbled/binary text from scanned PDFs
+        # If >30% of chars are non-printable ASCII, skip this chunk
+        printable_ratio = sum(
+            1 for c in doc_text if 32 <= ord(c) < 127 or c in ('\n', '\t', '\r')
+        ) / max(len(doc_text), 1)
+        if printable_ratio < 0.70:
+            logger.debug(
+                "Skipping garbled chunk (printable_ratio=%.2f): %.40r",
+                printable_ratio, doc_text
+            )
+            continue
+
         # Extract metadata
         meta = metadatas[i] if i < len(metadatas) else {}
         source = meta.get("source", "ECSS standard")
@@ -871,9 +879,12 @@ def _retrieve_from_fallback(
 
     Scoring:
       - Each trigger cue that appears in (query + fault_cues) adds 1 point
-      - Case-insensitive matching
+      - Case-insensitive substring matching
       - Entries are ranked by score, top_k returned
-      - If no entry scores > 0, returns MULTI_CASCADE as catch-all
+      - If fewer than top_k entries match, pads with the next best entries
+        (score=0 entries included to meet top_k) so callers always get
+        the requested number of entries when KB is large enough.
+      - If no entry scores > 0, returns MULTI_CASCADE as the first entry
     """
     combined_text = query.lower()
     if fault_cues:
@@ -887,25 +898,36 @@ def _retrieve_from_fallback(
         )
         scored.append((score, entry))
 
-    # Sort by score descending, then by original order for ties
+    # Sort by score descending, preserving original order for equal scores
     scored.sort(key=lambda x: x[0], reverse=True)
 
-    # Filter to entries that actually matched
-    matched = [entry for score, entry in scored if score > 0]
+    # Find the best-matching entries
+    matched_positive = [entry for score, entry in scored if score > 0]
 
-    if not matched:
-        # Always return something — MULTI_CASCADE is the safest default
-        # because it tells the LLM to look for the initiating fault
+    if not matched_positive:
+        # No entries matched — always lead with MULTI_CASCADE catch-all,
+        # then pad with other KB entries up to top_k
         logger.info(
             "No KB entries matched query/cues — returning MULTI_CASCADE "
             "as catch-all"
         )
-        matched = [_KB_MULTI_CASCADE]
+        results: list[KBEntry] = [_KB_MULTI_CASCADE]
+        for _score, entry in scored:
+            if entry.fault_class != "MULTI_CASCADE" and len(results) < top_k:
+                results.append(entry)
+        return [entry.content for entry in results[:top_k]]
 
-    # Trim to top_k
-    results = matched[:top_k]
+    # Have some matched entries; pad with next-best if needed
+    if len(matched_positive) >= top_k:
+        return [entry.content for entry in matched_positive[:top_k]]
 
-    return [entry.content for entry in results]
+    # Fewer matches than requested: add unmatched entries in order
+    results_with_data: list[KBEntry] = list(matched_positive)
+    matched_classes = {e.fault_class for e in matched_positive}
+    for _score, entry in scored:
+        if entry.fault_class not in matched_classes and len(results_with_data) < top_k:
+            results_with_data.append(entry)
+    return [entry.content for entry in results_with_data[:top_k]]
 
 
 def retrieve_by_fault_class(
@@ -971,20 +993,3 @@ def reset_rag_state() -> None:
     _chroma_collection = None
     _embedding_fn = None
     _rag_status = RAGStatus()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# BACKWARD COMPATIBILITY WRAPPER
-# ═══════════════════════════════════════════════════════════════════════════
-
-class LlamaIndexPipeline:
-    """A backward-compatibility wrapper mapping the old interface to the hybrid RAG."""
-    def __init__(self, index_path: str = "", config: dict = None):
-        self.index_path = index_path
-        self.config = config or {}
-
-    def query(self, text: str) -> str:
-        # Import dynamically to avoid circular dependencies
-        from rag import retrieve_procedures
-        results = retrieve_procedures(query=text, use_pdf_rag=True)
-        return "\n\n---\n\n".join(results)
-
