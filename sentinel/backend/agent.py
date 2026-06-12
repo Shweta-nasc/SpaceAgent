@@ -2,12 +2,13 @@
 SENTINEL — Reasoning Agent Core (agent.py)
 
 Gemini-first, model-agnostic reasoning agent implementing the full
-STEPS 4-6 pipeline:
+STEPS 4-7 pipeline:
   1. Accepts crash dump input (dict or JSON string)
   2. Assembles messages via prompts.build_messages()
   3. Calls the LLM (Gemini Flash by default, with tuned and fallback branches)
   4. Parses and validates the response into SentinelOutput
   5. Retries once on malformed output with a repair prompt
+  6. Runs deterministic safety validation on recovery steps (Step 7)
 
 Architecture — Three reasoning modes in one agent:
   - "base"    → Gemini Flash (hosted, fast, primary demo path)
@@ -17,14 +18,14 @@ Architecture — Three reasoning modes in one agent:
                  (Phi-3-mini, Qwen2.5, Ollama, etc.)
 
 The mode is set via AgentConfig.mode. All three modes share the same
-pipeline: build_messages → call_llm → parse_json → validate. Only the
-LLM call layer changes per mode. This keeps the architecture simple
-and the demo safe.
+pipeline: build_messages → call_llm → parse_json → validate → safety_check.
+Only the LLM call layer changes per mode.
 
 Completed integration points:
   - Step 4: fallback KB retrieval via rag.retrieve_procedures(use_pdf_rag=False)
   - Step 5: structured output schema validation via SentinelOutput (models.py)
   - Step 6: PDF RAG retrieval via rag.retrieve_procedures(use_pdf_rag=True)
+  - Step 7: deterministic safety validation via safety.validate_recovery_plan()
   - Retry logic with repair prompt is active
 
 Convenience wrapper:
@@ -32,7 +33,6 @@ Convenience wrapper:
     Use this from main.py or evaluation scripts instead of calling both separately.
 
 Future integration points:
-  - Step 7: safety.py command whitelist validation
   - Step 9+: LangGraph tool routing (query_telemetry, check_safety, propose_recovery)
   - Step 11: SSE streaming via analyze_crash_dump_stream()
 
@@ -40,6 +40,7 @@ Imports from our own modules:
   - models.py  → SentinelOutput, AnalysisStatus
   - prompts.py → build_messages
   - rag.py     → retrieve_procedures (lazy import to avoid circular)
+  - safety.py  → validate_recovery_plan, apply_validation_to_output (lazy import)
 """
 
 from __future__ import annotations
@@ -422,6 +423,22 @@ class SentinelAgent:
                 # Validate against SentinelOutput
                 result = _validate_output(parsed)
 
+                # --- Step 7: Safety validation ---
+                # Deterministic whitelist + constraint checks on recovery plan.
+                # Lazy import to avoid circular dependency.
+                from safety import validate_recovery_plan, apply_validation_to_output
+
+                validation = validate_recovery_plan(result, state.crash_dump)
+                result = apply_validation_to_output(result, validation)
+
+                if validation.blocked_steps:
+                    logger.info(
+                        "Safety: %d step(s) blocked, %d approved. %s",
+                        len(validation.blocked_steps),
+                        len(validation.validated_steps),
+                        validation.safety_summary,
+                    )
+
                 # Success — record timing and return
                 state.elapsed_seconds = time.time() - state.start_time
                 logger.info(
@@ -663,20 +680,16 @@ class SentinelAgent:
 
 
 # ---------------------------------------------------------------------------
-# Tool-node hooks (Step 7+ stubs — genuinely future work)
+# Tool-node hooks (Step 9+ stubs — genuinely future work)
 # ---------------------------------------------------------------------------
 #
-# Steps 4, 5, and 6 are complete and wired:
+# Steps 4, 5, 6, and 7 are complete and wired:
 #   - Step 4: retrieve_procedures(use_pdf_rag=False) in rag.py
 #   - Step 5: SentinelOutput validation in models.py + agent.py retry loop
 #   - Step 6: retrieve_procedures(use_pdf_rag=True) in rag.py
+#   - Step 7: validate_recovery_plan() + apply_validation_to_output() in safety.py
 #
-# The following are genuinely future (Step 7+) and NOT yet implemented:
-#
-# def check_safety(command: str) -> bool:
-#     """Step 7: validate a recovery command against the safety whitelist.
-#     Implemented in safety.py (not yet built)."""
-#     ...
+# The following are genuinely future (Step 9+) and NOT yet implemented:
 #
 # def query_telemetry(state: AgentState, param: str) -> str:
 #     """Step 9+: Read a specific parameter from the crash dump.
