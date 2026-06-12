@@ -62,19 +62,19 @@ class AgentConfig:
     All LLM parameters in one place so swapping models later
     (e.g. Phi-3-mini, GPT-4o) requires changing only this dataclass.
     """
-    model: str = "gpt-4o-mini"
+    model: str = "gemini-2.5-flash"
     temperature: float = 0.1          # Low for deterministic JSON output
     max_tokens: int = 2048            # Enough for 3 hypotheses + recovery plan
     timeout_seconds: float = 90.0     # Hard timeout per the Master Planner
     max_retries: int = 1              # Retry once on malformed output
-    api_key: str | None = None        # Falls back to OPENAI_API_KEY env var
+    api_key: str | None = None        # Falls back to GOOGLE_API_KEY env var
 
     def get_api_key(self) -> str:
         """Resolve API key from config or environment."""
-        key = self.api_key or os.environ.get("OPENAI_API_KEY")
+        key = self.api_key or os.environ.get("GOOGLE_API_KEY")
         if not key:
             raise AgentError(
-                "No OpenAI API key found. Set OPENAI_API_KEY in .env or "
+                "No Google API key found. Set GOOGLE_API_KEY in .env or "
                 "pass api_key to AgentConfig."
             )
         return key
@@ -238,23 +238,21 @@ class SentinelAgent:
 
     def __init__(self, config: AgentConfig | None = None):
         self.config = config or AgentConfig()
-        self._client = None  # Lazy-initialized OpenAI client
+        self._client = None  # Lazy-initialized Gemini client
 
     @property
     def client(self):
-        """Lazy-init the OpenAI client so import doesn't require API key."""
+        """Lazy-init the Gemini GenerativeModel so import doesn't require API key."""
         if self._client is None:
             try:
-                from openai import OpenAI
+                import google.generativeai as genai
             except ImportError:
                 raise AgentError(
-                    "openai package not installed. "
-                    "Run: pip install openai"
+                    "google-generativeai package not installed. "
+                    "Run: pip install google-generativeai"
                 )
-            self._client = OpenAI(
-                api_key=self.config.get_api_key(),
-                timeout=self.config.timeout_seconds,
-            )
+            genai.configure(api_key=self.config.get_api_key())
+            self._client = genai
         return self._client
 
     def analyze_crash_dump(
@@ -386,23 +384,61 @@ class SentinelAgent:
             )
 
     def _call_llm(self, messages: list[dict[str, str]]) -> str:
-        """Call the OpenAI-compatible LLM API.
+        """Call the Google Gemini LLM API.
 
-        Returns the raw text content of the assistant's response.
-
-        Future: This method is the injection point for swapping to
-        a local model, Phi-3-mini via Ollama, or any provider.
+        Converts OpenAI-style message dicts into Gemini's system_instruction
+        + chat history format, then calls generate_content.
         """
         try:
-            response = self.client.chat.completions.create(
-                model=self.config.model,
-                messages=messages,
+            import google.generativeai as genai
+
+            # Separate system prompt from conversation history
+            system_parts = []
+            history = []
+            pending_user_text = None
+
+            for msg in messages:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role == "system":
+                    system_parts.append(content)
+                elif role == "user":
+                    pending_user_text = content
+                elif role == "assistant":
+                    # Flush any pending user turn before the assistant reply
+                    if pending_user_text is not None:
+                        history.append({"role": "user", "parts": [pending_user_text]})
+                        pending_user_text = None
+                    history.append({"role": "model", "parts": [content]})
+
+            # Build model with optional system instruction
+            model_kwargs = {"model_name": self.config.model}
+            if system_parts:
+                model_kwargs["system_instruction"] = "\n\n".join(system_parts)
+
+            generation_config = genai.types.GenerationConfig(
                 temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
+                max_output_tokens=self.config.max_tokens,
             )
-            content = response.choices[0].message.content
+
+            model = genai.GenerativeModel(**model_kwargs)
+
+            # If there is prior history, use a chat session; otherwise single call
+            if history:
+                chat = model.start_chat(history=history)
+                response = chat.send_message(
+                    pending_user_text or "",
+                    generation_config=generation_config,
+                )
+            else:
+                response = model.generate_content(
+                    pending_user_text or "",
+                    generation_config=generation_config,
+                )
+
+            content = response.text
             if not content:
-                raise LLMCallError("LLM returned empty response content")
+                raise LLMCallError("Gemini returned empty response content")
             return content
 
         except AgentError:
@@ -411,7 +447,7 @@ class SentinelAgent:
 
         except Exception as e:
             raise LLMCallError(
-                f"LLM API call failed ({type(e).__name__}): {e}"
+                f"Gemini API call failed ({type(e).__name__}): {e}"
             )
 
     def analyze_crash_dump_stream(
