@@ -251,6 +251,8 @@ class SentinelOutput(BaseModel):
 
 
         # --- Invariant 4: auto-set requires_human_review ---
+        # Only auto-ESCALATE to True, never auto-downgrade to False.
+        # This ensures safety.py's requires_human_review=True is preserved.
         has_high_risk = any(
             s.risk in (RiskLevel.HIGH, RiskLevel.BLOCKED)
             for s in self.recovery_plan
@@ -259,13 +261,6 @@ class SentinelOutput(BaseModel):
         if should_flag and not self.requires_human_review:
             # Auto-correct rather than reject — safer for hackathon reliability
             object.__setattr__(self, "requires_human_review", True)
-
-        elif not should_flag and self.requires_human_review:
-            object.__setattr__(
-                self,
-                "requires_human_review",
-                False
-            )
 
         # --- Invariant 5: overall confidence matches rank-1 ---
         top_hyp = next(h for h in self.hypotheses if h.rank == 1)

@@ -10,7 +10,7 @@ This script validates:
   2. Safety rules completeness
   3. Output schema alignment with models.py
   4. Prompt builder behavior (with/without optional inputs)
-  5. Message builder format (OpenAI-compatible)
+  5. Message builder format (chat-completion compatible)
   6. No unsafe or exaggerated claims
   7. Integration readiness for agent.py
 
@@ -260,9 +260,9 @@ check("Empty anomaly list treated same as None",
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# TEST 9: MESSAGE BUILDER — OpenAI-compatible format
+# TEST 9: MESSAGE BUILDER — chat-completion compatible format
 # ═══════════════════════════════════════════════════════════════════════════
-print("\n🧪 TEST 9: build_messages — OpenAI-compatible format")
+print("\n🧪 TEST 9: build_messages — chat-completion compatible format")
 
 messages = build_messages(
     crash_dump_json=SAMPLE_CRASH_DUMP,
@@ -427,7 +427,7 @@ check("Uses 'wait_seconds' (not 'wait_s')",
 
 # Integration readiness
 print("\n  INTEGRATION READINESS:")
-check("build_messages returns OpenAI-compatible format",
+check("build_messages returns chat-completion compatible format",
       messages[0]["role"] == "system" and messages[1]["role"] == "user")
 check("system_prompt_override works for ablation study",
       messages_override[0]["content"] == ABLATION_PROMPT)
