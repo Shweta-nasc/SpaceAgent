@@ -108,7 +108,7 @@ VALID_LLM_RESPONSE = json.dumps({
         },
         {
             "rank": 3,
-            "root_cause": "OBC_SOFTWARE_FAULT",
+            "root_cause": "OBC_WATCHDOG_OVERFLOW",
             "affected_component": "OBC_MAIN",
             "confidence": 0.03,
             "causal_chain": [

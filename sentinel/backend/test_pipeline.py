@@ -22,12 +22,12 @@ from anomaly_detector import ZScoreAnomalyDetector, SATELLITE_NOMINAL_RANGES
 # ---------------------------------------------------------------------------
 
 FAULT_TYPES = [
-    "EPS_POWER_FAULT",
-    "ADCS_SENSOR_FAULT",
-    "OBC_SOFTWARE_FAULT",
-    "TCS_THERMAL_FAULT",
-    "COMMS_FAULT",
-    "MULTI_SYSTEM_CASCADE",
+    "EPS_SOLAR_UNDERVOLT",
+    "ADCS_GYRO_SEU",
+    "OBC_WATCHDOG_OVERFLOW",
+    "TCS_THERMAL_RUNAWAY",
+    "COMMS_TRANSPONDER_LOSS",
+    "MULTI_CASCADE",
 ]
 
 REQUIRED_KEYS = {
@@ -124,7 +124,7 @@ def test_2_fault_register_hex():
 
 def test_3_eps_anomalous_isa_vbat():
     """EPS fault has anomalous I_sa and V_bat readings."""
-    dump = _dumps["EPS_POWER_FAULT"]
+    dump = _dumps["EPS_SOLAR_UNDERVOLT"]
     telemetry = dump["pre_fault_telemetry"]
 
     isa_anomalous  = any(
@@ -149,7 +149,7 @@ def test_3_eps_anomalous_isa_vbat():
 
 def test_4_adcs_nan_gyro():
     """ADCS fault has a NaN Gyro_rate_degs reading."""
-    dump = _dumps["ADCS_SENSOR_FAULT"]
+    dump = _dumps["ADCS_GYRO_SEU"]
     telemetry = dump["pre_fault_telemetry"]
 
     gyro_readings = [r for r in telemetry if r["parameter"] == "Gyro_rate_degs"]
@@ -162,7 +162,7 @@ def test_4_adcs_nan_gyro():
 
 def test_5_obc_cpu_at_100():
     """OBC fault shows CPU_load_pct >= 95.0 in at least one reading."""
-    dump = _dumps["OBC_SOFTWARE_FAULT"]
+    dump = _dumps["OBC_WATCHDOG_OVERFLOW"]
     telemetry = dump["pre_fault_telemetry"]
 
     cpu_readings = [r for r in telemetry if r["parameter"] == "CPU_load_pct"]
@@ -226,8 +226,8 @@ def test_6_jsonl_generator():
 
 
 def test_7_detector_flags_eps_params():
-    """Z-score detector flags anomalous parameters for EPS_POWER_FAULT."""
-    dump = _dumps["EPS_POWER_FAULT"]
+    """Z-score detector flags anomalous parameters for EPS_SOLAR_UNDERVOLT."""
+    dump = _dumps["EPS_SOLAR_UNDERVOLT"]
     detector = ZScoreAnomalyDetector(z_threshold=3.0, window_size=10)
     detector.fit_from_nominal_ranges(SATELLITE_NOMINAL_RANGES)
 
@@ -237,7 +237,7 @@ def test_7_detector_flags_eps_params():
     anomalous_params = {e["parameter"] for e in report["anomalous_parameters"]}
 
     assert anomalous_params, (
-        "anomaly_report['anomalous_parameters'] is empty for EPS_POWER_FAULT"
+        "anomaly_report['anomalous_parameters'] is empty for EPS_SOLAR_UNDERVOLT"
     )
     eps_flagged = anomalous_params & {"I_sa", "V_bat"}
     assert eps_flagged, (
@@ -248,7 +248,7 @@ def test_7_detector_flags_eps_params():
 
 def test_8_detector_gyro_critical():
     """Detector classifies NaN Gyro_rate_degs as CRITICAL for ADCS fault."""
-    dump = _dumps["ADCS_SENSOR_FAULT"]
+    dump = _dumps["ADCS_GYRO_SEU"]
     detector = ZScoreAnomalyDetector(z_threshold=3.0, window_size=10)
     detector.fit_from_nominal_ranges(SATELLITE_NOMINAL_RANGES)
 
@@ -267,7 +267,7 @@ def test_8_detector_gyro_critical():
 
 def test_9_cascade_spans_multiple_subsystems():
     """Cascade fault anomalies span at least 2 different subsystems."""
-    dump = _dumps["MULTI_SYSTEM_CASCADE"]
+    dump = _dumps["MULTI_CASCADE"]
     detector = ZScoreAnomalyDetector(z_threshold=3.0, window_size=10)
     detector.fit_from_nominal_ranges(SATELLITE_NOMINAL_RANGES)
 
@@ -288,7 +288,7 @@ def test_9_cascade_spans_multiple_subsystems():
 
 def test_10_ground_truth_confidence():
     """Ground truth confidence is high for single-system faults, lower for cascade."""
-    single_system = [ft for ft in FAULT_TYPES if ft != "MULTI_SYSTEM_CASCADE"]
+    single_system = [ft for ft in FAULT_TYPES if ft != "MULTI_CASCADE"]
 
     for ft in single_system:
         gt = _sim.get_ground_truth(ft)
@@ -296,9 +296,9 @@ def test_10_ground_truth_confidence():
             f"{ft}: confidence {gt['confidence']:.2f} < 0.80"
         )
 
-    gt_cascade = _sim.get_ground_truth("MULTI_SYSTEM_CASCADE")
+    gt_cascade = _sim.get_ground_truth("MULTI_CASCADE")
     assert gt_cascade["confidence"] < 0.80, (
-        f"MULTI_SYSTEM_CASCADE: confidence {gt_cascade['confidence']:.2f} "
+        f"MULTI_CASCADE: confidence {gt_cascade['confidence']:.2f} "
         f"expected < 0.80"
     )
 

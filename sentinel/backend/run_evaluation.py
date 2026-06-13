@@ -25,7 +25,7 @@ JSONL format expected from each candidate file
 Each line must be a JSON object with at minimum::
 
     {
-        "true_fault_type": "EPS_POWER_FAULT",   # ground-truth label
+        "true_fault_type": "EPS_SOLAR_UNDERVOLT",   # ground-truth label
         "response":        "<raw assistant JSON string>",
         "latency_ms":      312.5                 # optional float
     }
@@ -88,18 +88,18 @@ AUTO_DISCOVERY_EXCLUDE: set[str] = {
 
 # Fault-type keywords used to extract the label from a crash dump user message
 _FAULT_TYPE_RE = re.compile(
-    r"\b(EPS_POWER_FAULT|ADCS_SENSOR_FAULT|OBC_SOFTWARE_FAULT"
-    r"|TCS_THERMAL_FAULT|COMMS_FAULT|MULTI_SYSTEM_CASCADE)\b"
+    r"\b(EPS_SOLAR_UNDERVOLT|ADCS_GYRO_SEU|OBC_WATCHDOG_OVERFLOW"
+    r"|TCS_THERMAL_RUNAWAY|COMMS_TRANSPONDER_LOSS|MULTI_CASCADE)\b"
 )
 
 # Fault-register → fault-type mapping (fallback when no label field present)
 _FAULT_REGISTER_MAP: dict[str, str] = {
-    "0x00000002": "EPS_POWER_FAULT",
-    "0x00000042": "ADCS_SENSOR_FAULT",
-    "0x00000040": "OBC_SOFTWARE_FAULT",
-    "0x00000010": "TCS_THERMAL_FAULT",
-    "0x00000008": "COMMS_FAULT",
-    "0x00000046": "MULTI_SYSTEM_CASCADE",
+    "0x00000002": "EPS_SOLAR_UNDERVOLT",
+    "0x00000042": "ADCS_GYRO_SEU",
+    "0x00000040": "OBC_WATCHDOG_OVERFLOW",
+    "0x00000010": "TCS_THERMAL_RUNAWAY",
+    "0x00000008": "COMMS_TRANSPONDER_LOSS",
+    "0x00000046": "MULTI_CASCADE",
 }
 
 # ---------------------------------------------------------------------------
