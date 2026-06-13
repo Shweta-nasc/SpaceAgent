@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SENTINEL — AI Spacecraft Recovery Copilot</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/vis-network.min.js"></script>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 /* ─── RESET & BASE ─────────────────────────────────────────────── */
@@ -1216,6 +1216,31 @@ body.pmode #nav { display: none; }
 .rb-signal-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: dot-blink 1s infinite; margin-right: 4px; }
 .rb-center { display: flex; align-items: center; gap: 20px; flex: 1; justify-content: center; }
 body { padding-top: 48px; } /* push content below ribbon */
+.btn-dashboard {
+  background: transparent;
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  cursor: pointer;
+  border-radius: 3px;
+  text-decoration: none;
+  transition: all 0.25s ease;
+  box-shadow: 0 0 4px rgba(0, 229, 255, 0.1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-dashboard:hover {
+  background: var(--cyan-dim);
+  box-shadow: 0 0 12px var(--cyan-glow), inset 0 0 6px rgba(0, 229, 255, 0.2);
+  color: #fff;
+  border-color: #fff;
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    LIVE TELEMETRY STRIP  (real-time updating chips)
@@ -1435,7 +1460,10 @@ body.strip-visible { padding-top: 86px; }
       <div class="rb-val green" id="rb-agent">● ONLINE</div>
     </div>
   </div>
-  <div class="rb-utc" id="rb-utc">00:00:00 UTC</div>
+  <div style="display:flex;align-items:center;gap:16px">
+    <a href="http://localhost:3001" target="_blank" class="btn-dashboard" id="btn-dashboard">LIVE DASHBOARD</a>
+    <div class="rb-utc" id="rb-utc">00:00:00 UTC</div>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════
