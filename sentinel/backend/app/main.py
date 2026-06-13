@@ -48,12 +48,14 @@ agent = SentinelAgent()
 # ---------------------------------------------------------------------------
 
 @app.get("/health")
+@app.get("/api/health")
 def health_check():
     """Liveness probe — returns 200 OK when server is up."""
     return {"status": "ok"}
 
 
 @app.get("/scenarios")
+@app.get("/api/scenarios")
 def get_scenarios():
     """Return the pre-defined crash dump scenarios for the demo UI."""
     return get_preset_scenarios()
@@ -153,6 +155,7 @@ async def analyze_get_endpoint(preset: str = None, payload: str = None):
 
 
 @app.post("/analyze")
+@app.post("/api/analyze")
 async def analyze_endpoint(crash_dump: CrashDumpRequest):
     """Analyze a crash dump and stream the full reasoning trace via SSE.
 

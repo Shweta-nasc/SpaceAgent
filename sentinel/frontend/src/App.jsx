@@ -7,7 +7,7 @@ const BACKEND_URL = "http://localhost:8000";
 const LOCAL_PRESET_SCENARIOS = [
   {
     "scenario_id": 1,
-    "fault_type": "ADCS_SENSOR_FAULT",
+    "fault_type": "ADCS_GYRO_SEU",
     "fault_register": "0x00000080",
     "pre_fault_telemetry": [
       {"parameter": "Gyro_rate_degs", "value": "NaN", "nominal_min": 0.0, "nominal_max": 7.0},
@@ -38,7 +38,7 @@ const LOCAL_PRESET_SCENARIOS = [
   },
   {
     "scenario_id": 2,
-    "fault_type": "EPS_POWER_FAULT",
+    "fault_type": "EPS_SOLAR_UNDERVOLT",
     "fault_register": "0x00000002",
     "pre_fault_telemetry": [
       {"parameter": "I_sa", "value": 0.0, "nominal_min": 0.0, "nominal_max": 12.0},
@@ -68,7 +68,7 @@ const LOCAL_PRESET_SCENARIOS = [
   },
   {
     "scenario_id": 3,
-    "fault_type": "OBC_SOFTWARE_FAULT",
+    "fault_type": "OBC_WATCHDOG_OVERFLOW",
     "fault_register": "0x00000040",
     "pre_fault_telemetry": [
       {"parameter": "CPU_load_pct", "value": 100.0, "nominal_min": 0.0, "nominal_max": 70.0},
@@ -408,7 +408,7 @@ function App() {
                 <textarea
                   className="custom-select"
                   style={{ width: "100%", height: "120px", fontFamily: "monospace", fontSize: "0.75rem" }}
-                  placeholder='Paste crash dump JSON here (e.g. { "scenario_id": 4, "fault_type": "EPS_POWER_FAULT", ... })'
+                  placeholder='Paste crash dump JSON here (e.g. { "scenario_id": 4, "fault_type": "EPS_SOLAR_UNDERVOLT", ... })'
                   value={customDump}
                   onChange={(e) => setCustomDump(e.target.value)}
                 />

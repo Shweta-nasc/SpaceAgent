@@ -25,7 +25,7 @@ def get_preset_scenarios() -> list[dict[str, Any]]:
         # ── Scenario 1: ADCS Gyroscope SEU ────────────────────────────────
         {
             "scenario_id": 1,
-            "fault_type": "ADCS_SENSOR_FAULT",
+            "fault_type": "ADCS_GYRO_SEU",
             "incident_id": "INC-2026-0001",
             "fault_register": "0x00000080",
             "safe_mode_trigger": "ADCS_ERROR",
@@ -93,7 +93,7 @@ def get_preset_scenarios() -> list[dict[str, Any]]:
         # ── Scenario 2: EPS Power Fault ───────────────────────────────────
         {
             "scenario_id": 2,
-            "fault_type": "EPS_POWER_FAULT",
+            "fault_type": "EPS_SOLAR_UNDERVOLT",
             "incident_id": "INC-2026-0002",
             "fault_register": "0x00000002",
             "safe_mode_trigger": "EPS_UNDER_VOLT",
@@ -158,7 +158,7 @@ def get_preset_scenarios() -> list[dict[str, Any]]:
         # ── Scenario 3: OBC Software Fault ────────────────────────────────
         {
             "scenario_id": 3,
-            "fault_type": "OBC_SOFTWARE_FAULT",
+            "fault_type": "OBC_WATCHDOG_OVERFLOW",
             "incident_id": "INC-2026-0003",
             "fault_register": "0x00000040",
             "safe_mode_trigger": "WATCHDOG_RESET",

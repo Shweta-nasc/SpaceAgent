@@ -30,12 +30,12 @@ from simulation.fault_simulator import SatelliteFaultSimulator
 # ---------------------------------------------------------------------------
 
 VALID_FAULT_TYPES = [
-    "EPS_POWER_FAULT",
-    "ADCS_SENSOR_FAULT",
-    "OBC_SOFTWARE_FAULT",
-    "TCS_THERMAL_FAULT",
-    "COMMS_FAULT",
-    "MULTI_SYSTEM_CASCADE",
+    "EPS_SOLAR_UNDERVOLT",
+    "ADCS_GYRO_SEU",
+    "OBC_WATCHDOG_OVERFLOW",
+    "TCS_THERMAL_RUNAWAY",
+    "COMMS_TRANSPONDER_LOSS",
+    "MULTI_CASCADE",
 ]
 
 REQUIRED_TOP_LEVEL_KEYS = {
@@ -230,22 +230,22 @@ class TestScenarioIdField(unittest.TestCase):
 
     def test_scenario_id_echoed_value_1(self):
         """scenario_id=1 must appear unchanged in the output."""
-        result = self.sim.generate_crash_dump("EPS_POWER_FAULT", scenario_id=1)
+        result = self.sim.generate_crash_dump("EPS_SOLAR_UNDERVOLT", scenario_id=1)
         self.assertEqual(result["scenario_id"], 1)
 
     def test_scenario_id_echoed_value_100(self):
         """scenario_id=100 must appear unchanged in the output."""
-        result = self.sim.generate_crash_dump("EPS_POWER_FAULT", scenario_id=100)
+        result = self.sim.generate_crash_dump("EPS_SOLAR_UNDERVOLT", scenario_id=100)
         self.assertEqual(result["scenario_id"], 100)
 
     def test_scenario_id_echoed_value_zero(self):
         """scenario_id=0 must appear unchanged in the output."""
-        result = self.sim.generate_crash_dump("EPS_POWER_FAULT", scenario_id=0)
+        result = self.sim.generate_crash_dump("EPS_SOLAR_UNDERVOLT", scenario_id=0)
         self.assertEqual(result["scenario_id"], 0)
 
     def test_scenario_id_is_integer(self):
         """The scenario_id field must be stored as an int."""
-        result = self.sim.generate_crash_dump("EPS_POWER_FAULT", scenario_id=7)
+        result = self.sim.generate_crash_dump("EPS_SOLAR_UNDERVOLT", scenario_id=7)
         self.assertIsInstance(
             result["scenario_id"],
             int,
@@ -254,8 +254,8 @@ class TestScenarioIdField(unittest.TestCase):
 
     def test_different_scenario_ids_are_independent(self):
         """Two calls with different scenario_ids must each return the correct value."""
-        r1 = self.sim.generate_crash_dump("EPS_POWER_FAULT", scenario_id=10)
-        r2 = self.sim.generate_crash_dump("EPS_POWER_FAULT", scenario_id=20)
+        r1 = self.sim.generate_crash_dump("EPS_SOLAR_UNDERVOLT", scenario_id=10)
+        r2 = self.sim.generate_crash_dump("EPS_SOLAR_UNDERVOLT", scenario_id=20)
         self.assertEqual(r1["scenario_id"], 10)
         self.assertEqual(r2["scenario_id"], 20)
 
@@ -272,7 +272,7 @@ class TestTimestampField(unittest.TestCase):
 
     def test_timestamp_is_string(self):
         """timestamp must be a string."""
-        result = self.sim.generate_crash_dump("EPS_POWER_FAULT", scenario_id=1)
+        result = self.sim.generate_crash_dump("EPS_SOLAR_UNDERVOLT", scenario_id=1)
         self.assertIsInstance(
             result["timestamp"],
             str,
@@ -344,7 +344,7 @@ class TestTimestampField(unittest.TestCase):
 
     def test_timestamp_ends_with_z(self):
         """timestamp must end with the UTC designator 'Z'."""
-        result = self.sim.generate_crash_dump("EPS_POWER_FAULT", scenario_id=1)
+        result = self.sim.generate_crash_dump("EPS_SOLAR_UNDERVOLT", scenario_id=1)
         self.assertTrue(
             result["timestamp"].endswith("Z"),
             msg=f"timestamp {result['timestamp']!r} must end with 'Z'.",
@@ -352,7 +352,7 @@ class TestTimestampField(unittest.TestCase):
 
     def test_timestamp_has_correct_length(self):
         """ISO 8601 timestamp 'YYYY-MM-DDTHH:MM:SSZ' must be exactly 20 characters."""
-        result = self.sim.generate_crash_dump("EPS_POWER_FAULT", scenario_id=1)
+        result = self.sim.generate_crash_dump("EPS_SOLAR_UNDERVOLT", scenario_id=1)
         self.assertEqual(
             len(result["timestamp"]),
             20,
@@ -389,7 +389,7 @@ class TestFaultTypeField(unittest.TestCase):
 
     def test_fault_type_is_string(self):
         """fault_type field must be stored as a str."""
-        result = self.sim.generate_crash_dump("EPS_POWER_FAULT", scenario_id=1)
+        result = self.sim.generate_crash_dump("EPS_SOLAR_UNDERVOLT", scenario_id=1)
         self.assertIsInstance(
             result["fault_type"],
             str,
@@ -398,7 +398,7 @@ class TestFaultTypeField(unittest.TestCase):
 
     def test_fault_type_not_mutated(self):
         """The fault_type value in the output must not be modified (e.g. lowercased)."""
-        original = "MULTI_SYSTEM_CASCADE"
+        original = "MULTI_CASCADE"
         result = self.sim.generate_crash_dump(original, scenario_id=1)
         self.assertEqual(
             result["fault_type"],
@@ -484,7 +484,7 @@ class TestPreFaultTelemetryStructure(unittest.TestCase):
 
     def test_each_telemetry_reading_is_dict(self):
         """Every reading in pre_fault_telemetry must be a dict."""
-        result = self.sim.generate_crash_dump("EPS_POWER_FAULT", scenario_id=1)
+        result = self.sim.generate_crash_dump("EPS_SOLAR_UNDERVOLT", scenario_id=1)
         for i, reading in enumerate(result["pre_fault_telemetry"]):
             with self.subTest(index=i):
                 self.assertIsInstance(reading, dict)
@@ -524,7 +524,7 @@ class TestEventLogStructure(unittest.TestCase):
 
     def test_each_event_is_dict(self):
         """Every entry in event_log must be a dict."""
-        result = self.sim.generate_crash_dump("EPS_POWER_FAULT", scenario_id=1)
+        result = self.sim.generate_crash_dump("EPS_SOLAR_UNDERVOLT", scenario_id=1)
         for i, event in enumerate(result["event_log"]):
             with self.subTest(index=i):
                 self.assertIsInstance(event, dict)
@@ -562,14 +562,14 @@ class TestReproducibility(unittest.TestCase):
         """Two simulators with the same seed must produce identical timestamps."""
         sim_a = SatelliteFaultSimulator(seed=99)
         sim_b = SatelliteFaultSimulator(seed=99)
-        r_a = sim_a.generate_crash_dump("EPS_POWER_FAULT", scenario_id=1)
-        r_b = sim_b.generate_crash_dump("EPS_POWER_FAULT", scenario_id=1)
+        r_a = sim_a.generate_crash_dump("EPS_SOLAR_UNDERVOLT", scenario_id=1)
+        r_b = sim_b.generate_crash_dump("EPS_SOLAR_UNDERVOLT", scenario_id=1)
         self.assertEqual(r_a["timestamp"], r_b["timestamp"])
 
     def test_same_seed_produces_same_scenario_id(self):
         """scenario_id is deterministic (always equals the argument)."""
         sim = SatelliteFaultSimulator(seed=7)
-        r1 = sim.generate_crash_dump("TCS_THERMAL_FAULT", scenario_id=55)
+        r1 = sim.generate_crash_dump("TCS_THERMAL_RUNAWAY", scenario_id=55)
         self.assertEqual(r1["scenario_id"], 55)
 
 

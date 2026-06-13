@@ -61,7 +61,7 @@ SENTINEL_SYSTEM_PROMPT = (
     "- If your confidence is below 0.70, set requires_human_review: true\n"
     "\n"
     'OUTPUT FORMAT — STRICT JSON, NO EXCEPTIONS:\n'
-    '{"hypotheses": [{"rank": 1, "root_cause": "EPS_SOLAR_UNDERVOLT", "component": "SOLAR_ARRAY_A",\n'
+    '{"hypotheses": [{"rank": 1, "root_cause": "EPS_SOLAR_UNDERVOLT", "affected_component": "SOLAR_ARRAY_A",\n'
     '"confidence": 0.88, "causal_chain": ["I_sa drops to 0A in sunlight",\n'
     '"battery begins draining", "V_bat falls to 24.1V", "EPS fault flag set",\n'
     '"safe mode triggered"]},\n'
@@ -101,13 +101,59 @@ _ALT_HYPOTHESES: dict = {
 }
 
 # Recovery command prefixes derived from each fault type's subsystem.
-_CMD_PREFIX: dict = {
-    "EPS_SOLAR_UNDERVOLT":      "CMD_EPS",
-    "ADCS_GYRO_SEU":            "CMD_ADCS",
-    "OBC_WATCHDOG_OVERFLOW":    "CMD_OBC",
-    "TCS_THERMAL_RUNAWAY":      "CMD_TCS",
-    "COMMS_TRANSPONDER_LOSS":   "CMD_COMMS",
-    "MULTI_CASCADE":            "CMD_MULTI",
+_PRIMARY_COMPONENT: dict = {
+    "EPS_SOLAR_UNDERVOLT":      "SOLAR_ARRAY_A",
+    "ADCS_GYRO_SEU":            "GYRO_A",
+    "OBC_WATCHDOG_OVERFLOW":    "OBC_FLIGHT_SOFTWARE",
+    "TCS_THERMAL_RUNAWAY":      "HEATER_ZONE_2",
+    "COMMS_TRANSPONDER_LOSS":   "TRANSPONDER_PRIMARY",
+    "MULTI_CASCADE":            "ADCS_EPS_TCS_CHAIN",
+}
+
+# Commands must stay aligned with app.agent.safety.COMMAND_WHITELIST.
+_RECOVERY_COMMANDS: dict = {
+    "EPS_SOLAR_UNDERVOLT": [
+        "CMD_SOLAR_ARRAY_VERIFY",
+        "CMD_SUN_SENSOR_CHECK",
+        "CMD_POWER_SHED_NONESSENTIAL",
+        "CMD_BATTERY_CHECK",
+        "CMD_POWER_RESTORE",
+    ],
+    "ADCS_GYRO_SEU": [
+        "CMD_VERIFY_SEU_COUNTER",
+        "CMD_GYRO_A_DRIVER_RESET",
+        "CMD_REACTION_WHEEL_DESAT",
+        "CMD_ATTITUDE_REACQUISITION",
+        "CMD_SAFE_MODE_EXIT",
+    ],
+    "OBC_WATCHDOG_OVERFLOW": [
+        "CMD_TRANSPONDER_LOCK_VERIFY",
+        "CMD_OBC_CONTROLLED_REBOOT",
+        "CMD_MEMORY_CHECK",
+        "CMD_CPU_LOAD_CHECK",
+        "CMD_SAFE_MODE_EXIT",
+    ],
+    "TCS_THERMAL_RUNAWAY": [
+        "CMD_HEATER_DISABLE",
+        "CMD_THERMAL_MONITOR_CHECK",
+        "CMD_THERMAL_CHECK",
+        "CMD_HEATER_CHECK",
+        "CMD_SAFE_MODE_EXIT",
+    ],
+    "COMMS_TRANSPONDER_LOSS": [
+        "CMD_TRANSPONDER_LOCK_VERIFY",
+        "CMD_ANTENNA_SWITCH",
+        "CMD_TRANSPONDER_RESET",
+        "CMD_COMMS_SIGNAL_CHECK",
+        "CMD_SAFE_MODE_EXIT",
+    ],
+    "MULTI_CASCADE": [
+        "CMD_VERIFY_SEU_COUNTER",
+        "CMD_GYRO_A_DRIVER_RESET",
+        "CMD_SUN_ACQUISITION",
+        "CMD_POWER_CHECK",
+        "CMD_HEATER_DISABLE",
+    ],
 }
 
 
@@ -224,14 +270,14 @@ def format_ground_truth_as_response(ground_truth: dict, crash_dump: dict) -> str
         {
             "rank":        1,
             "root_cause":  fault_type,
-            "component":   f"{subsystem}_PRIMARY",
+            "affected_component": _PRIMARY_COMPONENT[fault_type],
             "confidence":  round(confidence, 2),
             "causal_chain": causal,
         },
         {
             "rank":       2,
             "root_cause": alt2_type,
-            "component":  f"{alt2_type.split('_')[0]}_SECONDARY",
+            "affected_component": f"{alt2_type.split('_')[0]}_SECONDARY",
             "confidence": round(max(0.05, confidence - 0.30), 2),
             "causal_chain": [
                 f"Alternative scenario: {alt2_type.replace('_', ' ').lower()} signature present",
@@ -242,7 +288,7 @@ def format_ground_truth_as_response(ground_truth: dict, crash_dump: dict) -> str
         {
             "rank":       3,
             "root_cause": alt3_type,
-            "component":  f"{alt3_type.split('_')[0]}_TERTIARY",
+            "affected_component": f"{alt3_type.split('_')[0]}_TERTIARY",
             "confidence": round(max(0.02, confidence - 0.50), 2),
             "causal_chain": [
                 f"Low-probability scenario: {alt3_type.replace('_', ' ').lower()}",
@@ -254,16 +300,13 @@ def format_ground_truth_as_response(ground_truth: dict, crash_dump: dict) -> str
     # ---- Recovery plan (3–5 steps from recovery_action_sequence) ----
     # Take up to 5 steps; the last step always gets MEDIUM/HIGH risk if
     # the overall risk level is elevated.
-    cmd_prefix   = _CMD_PREFIX[fault_type]
     wait_seconds = [15, 30, 20, 10, 60]  # staggered waits per step
+    commands = _RECOVERY_COMMANDS[fault_type]
 
     recovery_steps_to_use = recovery[:5]
     recovery_plan = []
     for i, action in enumerate(recovery_steps_to_use):
         step_number = i + 1
-        # Derive a short command token from the action text
-        cmd_token = action.split()[0].upper().replace(",", "").replace(".", "")
-        command   = f"{cmd_prefix}_{cmd_token}"
         # Escalate risk on the last step if overall risk is HIGH
         if risk_level == "HIGH" and step_number == len(recovery_steps_to_use):
             step_risk = "HIGH"
@@ -274,7 +317,7 @@ def format_ground_truth_as_response(ground_truth: dict, crash_dump: dict) -> str
 
         recovery_plan.append({
             "step":         step_number,
-            "command":      command,
+            "command":      commands[i],
             "rationale":    action,
             "wait_seconds": wait_seconds[i % len(wait_seconds)],
             "verify":       f"Telemetry confirms action {step_number} completed successfully",

@@ -135,7 +135,7 @@ cd backend && uvicorn main:app --reload
 # Submit a crash dump
 curl -X POST http://localhost:8000/analyze \
   -H 'Content-Type: application/json' \
-  -d '{"crash_dump": {"scenario_id": "TEST_001", "fault_type": "ADCS_SENSOR_FAULT", ...}}'
+  -d '{"crash_dump": {"scenario_id": "TEST_001", "fault_type": "ADCS_GYRO_SEU", ...}}'
 
 # Health check
 curl http://localhost:8000/health
