@@ -37,7 +37,7 @@ def make_hypotheses(
     return [
         Hypothesis(
             rank=1,
-            root_cause="EPS_POWER_FAULT",
+            root_cause="EPS_SOLAR_UNDERVOLT",
             affected_component="SOLAR_ARRAY_A",
             confidence=c1,
             causal_chain=[

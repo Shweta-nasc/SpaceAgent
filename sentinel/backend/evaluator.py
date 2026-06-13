@@ -31,8 +31,8 @@ from typing import Any, Optional
 # ---------------------------------------------------------------------------
 
 GROUND_TRUTH_REGISTRY: dict[str, dict[str, Any]] = {
-    "EPS_POWER_FAULT": {
-        "root_cause":              "EPS_POWER_FAULT",
+    "EPS_SOLAR_UNDERVOLT": {
+        "root_cause":              "EPS_SOLAR_UNDERVOLT",
         "subsystem":               "EPS",
         "confidence":              0.95,
         "risk_level":              "HIGH",
@@ -46,8 +46,8 @@ GROUND_TRUTH_REGISTRY: dict[str, dict[str, Any]] = {
             "undervoltage", "safe mode",
         ],
     },
-    "ADCS_SENSOR_FAULT": {
-        "root_cause":              "ADCS_SENSOR_FAULT",
+    "ADCS_GYRO_SEU": {
+        "root_cause":              "ADCS_GYRO_SEU",
         "subsystem":               "ADCS",
         "confidence":              0.92,
         "risk_level":              "HIGH",
@@ -61,8 +61,8 @@ GROUND_TRUTH_REGISTRY: dict[str, dict[str, Any]] = {
             "saturation", "safe mode",
         ],
     },
-    "OBC_SOFTWARE_FAULT": {
-        "root_cause":              "OBC_SOFTWARE_FAULT",
+    "OBC_WATCHDOG_OVERFLOW": {
+        "root_cause":              "OBC_WATCHDOG_OVERFLOW",
         "subsystem":               "OBC",
         "confidence":              0.90,
         "risk_level":              "MEDIUM",
@@ -76,8 +76,8 @@ GROUND_TRUTH_REGISTRY: dict[str, dict[str, Any]] = {
             "scheduler", "heap", "reset",
         ],
     },
-    "TCS_THERMAL_FAULT": {
-        "root_cause":              "TCS_THERMAL_FAULT",
+    "TCS_THERMAL_RUNAWAY": {
+        "root_cause":              "TCS_THERMAL_RUNAWAY",
         "subsystem":               "TCS",
         "confidence":              0.88,
         "risk_level":              "HIGH",
@@ -91,8 +91,8 @@ GROUND_TRUTH_REGISTRY: dict[str, dict[str, Any]] = {
             "thermal", "stuck", "flag",
         ],
     },
-    "COMMS_FAULT": {
-        "root_cause":              "COMMS_FAULT",
+    "COMMS_TRANSPONDER_LOSS": {
+        "root_cause":              "COMMS_TRANSPONDER_LOSS",
         "subsystem":               "COMMS",
         "confidence":              0.85,
         "risk_level":              "MEDIUM",
@@ -106,8 +106,8 @@ GROUND_TRUTH_REGISTRY: dict[str, dict[str, Any]] = {
             "attitude", "star tracker", "blind",
         ],
     },
-    "MULTI_SYSTEM_CASCADE": {
-        "root_cause":              "MULTI_SYSTEM_CASCADE",
+    "MULTI_CASCADE": {
+        "root_cause":              "MULTI_CASCADE",
         "subsystem":               "MULTI",
         "confidence":              0.65,
         "risk_level":              "HIGH",
@@ -272,7 +272,7 @@ class SentinelEvaluator:
     Usage
     -----
     >>> ev = SentinelEvaluator("my_model")
-    >>> ev.add(raw_json_str, "EPS_POWER_FAULT", latency_ms=312.0)
+    >>> ev.add(raw_json_str, "EPS_SOLAR_UNDERVOLT", latency_ms=312.0)
     >>> report = ev.report()
     """
 
