@@ -52,15 +52,26 @@ import re
 import time
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Optional
 
-from dotenv import load_dotenv
+# Load .env if available (supports sentinel/.env and sentinel/backend/.env)
+try:
+    from dotenv import load_dotenv
+    _AGENT_DIR = Path(__file__).resolve().parent
+    for _env_candidate in [
+        _AGENT_DIR.parent.parent / ".env",        # sentinel/backend/.env
+        _AGENT_DIR.parent.parent.parent / ".env",  # sentinel/.env
+    ]:
+        if _env_candidate.is_file():
+            load_dotenv(_env_candidate, override=False)
+            break
+except ImportError:
+    pass
+
 
 from app.api.models import AnalysisStatus, SentinelOutput
 from app.agent.prompts import build_messages
-
-# Load .env from sentinel/ root (three levels up from app/agent/)
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
 
 logger = logging.getLogger("sentinel.agent")
 
@@ -354,6 +365,7 @@ class SentinelAgent:
         anomalous_parameters: list[str] | None = None,
         retrieved_procedures: list[str] | None = None,
         system_prompt_override: str | None = None,
+        skip_safety: bool = False,
     ) -> SentinelOutput:
         """Run the SENTINEL diagnostic pipeline on a crash dump.
 
@@ -368,6 +380,9 @@ class SentinelAgent:
                 from RAG. Will be populated by rag.py.
             system_prompt_override: Optional system prompt replacement.
                 Used by Person 1's evaluator for ablation configs.
+            skip_safety: If True, bypass deterministic safety validation
+                (Step 7). Only used for ablation studies; never set True
+                on the default demo path.
 
         Returns:
             SentinelOutput — validated structured diagnostic output.
@@ -425,19 +440,23 @@ class SentinelAgent:
 
                 # --- Step 7: Safety validation ---
                 # Deterministic whitelist + constraint checks on recovery plan.
+                # Skipped only when skip_safety=True (ablation studies).
                 # Lazy import to avoid circular dependency.
-                from app.agent.safety import validate_recovery_plan, apply_validation_to_output
+                if not skip_safety:
+                    from app.agent.safety import validate_recovery_plan, apply_validation_to_output
 
-                validation = validate_recovery_plan(result, state.crash_dump)
-                result = apply_validation_to_output(result, validation)
+                    validation = validate_recovery_plan(result, state.crash_dump)
+                    result = apply_validation_to_output(result, validation)
 
-                if validation.blocked_steps:
-                    logger.info(
-                        "Safety: %d step(s) blocked, %d approved. %s",
-                        len(validation.blocked_steps),
-                        len(validation.validated_steps),
-                        validation.safety_summary,
-                    )
+                    if validation.blocked_steps:
+                        logger.info(
+                            "Safety: %d step(s) blocked, %d approved. %s",
+                            len(validation.blocked_steps),
+                            len(validation.validated_steps),
+                            validation.safety_summary,
+                        )
+                else:
+                    logger.info("Safety validation SKIPPED (ablation mode).")
 
                 # Success — record timing and return
                 state.elapsed_seconds = time.time() - state.start_time
@@ -604,6 +623,7 @@ class SentinelAgent:
         top_k: int = 3,
         use_pdf_rag: bool = True,
         system_prompt_override: str | None = None,
+        skip_safety: bool = False,
     ) -> SentinelOutput:
         """Convenience wrapper: retrieve procedures via RAG then analyze.
 
@@ -625,6 +645,8 @@ class SentinelAgent:
             top_k: Max procedure snippets to retrieve (default 3).
             use_pdf_rag: If True, try PDF RAG before fallback KB.
             system_prompt_override: Optional ablation study override.
+            skip_safety: If True, bypass deterministic safety validation.
+                Only used for ablation studies.
 
         Returns:
             SentinelOutput — validated structured diagnostic output.
@@ -676,6 +698,7 @@ class SentinelAgent:
             anomalous_parameters=anomalous_parameters,
             retrieved_procedures=retrieved_procedures,
             system_prompt_override=system_prompt_override,
+            skip_safety=skip_safety,
         )
 
 

@@ -1,0 +1,111 @@
+{
+  "generated_at": "2026-06-14T05:57:36.363571+00:00",
+  "test_suites": {
+    "test_schema_alignment (pytest)": {
+      "passed": 53,
+      "failed": 0
+    },
+    "test_pipeline (pytest)": {
+      "passed": 10,
+      "failed": 0
+    },
+    "test_generate_crash_dump (pytest)": {
+      "passed": 42,
+      "failed": 0
+    },
+    "test_streaming (pytest)": {
+      "passed": 10,
+      "failed": 0
+    },
+    "test_esa_integration (pytest)": {
+      "passed": 9,
+      "failed": 0
+    },
+    "test_demo_reliability (pytest)": {
+      "passed": 5,
+      "failed": 0
+    },
+    "test_safety (standalone)": {
+      "passed": 311,
+      "failed": 0
+    },
+    "test_rag (standalone)": {
+      "passed": 148,
+      "failed": 0
+    },
+    "test_agent (standalone)": {
+      "passed": 68,
+      "failed": 0
+    },
+    "test_models (standalone)": {
+      "passed": 18,
+      "failed": 0
+    }
+  },
+  "total_passed": 674,
+  "total_failed": 0,
+  "all_tests_pass": true,
+  "demo_reliability": {
+    "mode": "MOCKED (deterministic, no live LLM)",
+    "scenarios": [
+      {
+        "fault_type": "ADCS_GYRO_SEU",
+        "rank1_correct": true,
+        "confidence": 0.92,
+        "recovery_steps": 4,
+        "requires_human_review": false,
+        "passed_all_criteria": true
+      },
+      {
+        "fault_type": "EPS_SOLAR_UNDERVOLT",
+        "rank1_correct": true,
+        "confidence": 0.94,
+        "recovery_steps": 4,
+        "requires_human_review": false,
+        "passed_all_criteria": true
+      },
+      {
+        "fault_type": "OBC_WATCHDOG_OVERFLOW",
+        "rank1_correct": true,
+        "confidence": 0.91,
+        "recovery_steps": 4,
+        "requires_human_review": false,
+        "passed_all_criteria": true
+      }
+    ],
+    "pass_criteria": [
+      "Valid SentinelOutput",
+      "Rank-1 root cause matches ground truth",
+      "Completed within 90 seconds",
+      "Recovery plan has >= 3 steps",
+      "Reasoning summary is non-empty",
+      "requires_human_review follows safety/confidence rules"
+    ]
+  },
+  "backend_routes_verified": [
+    "GET /health",
+    "GET /api/health",
+    "GET /scenarios",
+    "GET /api/scenarios",
+    "POST /analyze",
+    "POST /api/analyze"
+  ],
+  "demo_cache_files": [
+    "data/demo_cache/gyro_seu_cached.json",
+    "data/demo_cache/solar_undervolt_cached.json",
+    "data/demo_cache/obc_watchdog_cached.json"
+  ],
+  "esa_integration": {
+    "crash_dump_built": true,
+    "source_type": "Real ESA Telemetry",
+    "root_cause_claimed": false,
+    "disclaimer": "ESA-ADB provides anonymized telemetry. No root-cause label available."
+  },
+  "live_llm_status": "NOT RUN \u2014 GEMINI_API_KEY required for live evaluation",
+  "pitch_guardrails": {
+    "no_claim_autonomous_recovery_absent": true,
+    "unique_value_prop": "No existing system combines LLM-based causal reasoning, RAG over engineering procedures, safety validation, and auditable recovery generation for spacecraft safe-mode diagnosis.",
+    "esa_root_cause_not_claimed": true,
+    "no_fabricated_numbers": true
+  }
+}

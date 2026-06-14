@@ -7,7 +7,8 @@ const BACKEND_URL = "http://localhost:8000";
 const LOCAL_PRESET_SCENARIOS = [
   {
     "scenario_id": 1,
-    "fault_type": "ADCS_SENSOR_FAULT",
+    "fault_type": "ADCS_GYRO_SEU",
+    "source_type": "Synthetic Safe Mode",
     "fault_register": "0x00000080",
     "pre_fault_telemetry": [
       {"parameter": "Gyro_rate_degs", "value": "NaN", "nominal_min": 0.0, "nominal_max": 7.0},
@@ -38,7 +39,8 @@ const LOCAL_PRESET_SCENARIOS = [
   },
   {
     "scenario_id": 2,
-    "fault_type": "EPS_POWER_FAULT",
+    "fault_type": "EPS_SOLAR_UNDERVOLT",
+    "source_type": "Synthetic Safe Mode",
     "fault_register": "0x00000002",
     "pre_fault_telemetry": [
       {"parameter": "I_sa", "value": 0.0, "nominal_min": 0.0, "nominal_max": 12.0},
@@ -68,7 +70,8 @@ const LOCAL_PRESET_SCENARIOS = [
   },
   {
     "scenario_id": 3,
-    "fault_type": "OBC_SOFTWARE_FAULT",
+    "fault_type": "OBC_WATCHDOG_OVERFLOW",
+    "source_type": "Synthetic Safe Mode",
     "fault_register": "0x00000040",
     "pre_fault_telemetry": [
       {"parameter": "CPU_load_pct", "value": 100.0, "nominal_min": 0.0, "nominal_max": 70.0},
@@ -93,6 +96,35 @@ const LOCAL_PRESET_SCENARIOS = [
       "eclipse_fraction": 0.2,
       "sun_sensor_angle_deg": 15.0,
       "time_since_contact_s": 50
+    }
+  },
+  {
+    "scenario_id": 4,
+    "fault_type": "ESA_ADB_ANOMALY",
+    "source_type": "Real ESA Telemetry",
+    "source_note": "Real anonymized telemetry from ESA Anomaly Detection Benchmark (Mission 1, id_109). Channel names are anonymized; no root-cause label available.",
+    "incident_id": "ESA-Mission1-id_109",
+    "fault_register": "ESA_LABEL:id_109;CLASS:class_3;SUBCLASS:subclass_2",
+    "pre_fault_telemetry": [
+      {"parameter": "channel_41", "value": 0.960135, "nominal_min": 0.797548, "nominal_max": 0.82607},
+      {"parameter": "channel_42", "value": 0.0, "nominal_min": 0.764285, "nominal_max": 0.806006},
+      {"parameter": "channel_43", "value": 0.93332, "nominal_min": 0.758193, "nominal_max": 0.786285},
+      {"parameter": "channel_44", "value": 0.947167, "nominal_min": 0.780812, "nominal_max": 0.815033},
+      {"parameter": "channel_45", "value": 0.977107, "nominal_min": 0.797574, "nominal_max": 0.829473},
+      {"parameter": "channel_46", "value": 0.95193, "nominal_min": 0.747717, "nominal_max": 0.78975}
+    ],
+    "event_log": [
+      {"timestamp": "T+0s", "source": "ESA_ADB_LABEL", "message": "id_109 labelled Anomaly starts; class=class_3"},
+      {"timestamp": "T+7s", "source": "ESA_ADB_LABEL", "message": "id_109 labelled interval ends"}
+    ],
+    "hardware_state": {
+      "last_reset_cause": "NOT_PROVIDED_BY_ESA_ADB",
+      "watchdog_status": "NOT_PROVIDED_BY_ESA_ADB"
+    },
+    "operating_context": {
+      "source_dataset": "ESA Anomaly Dataset / ESA-ADB",
+      "mission_folder": "ESA-Mission1",
+      "label_id": "id_109"
     }
   }
 ];
@@ -392,7 +424,7 @@ function App() {
               <select className="custom-select" onChange={handleScenarioChange} value={isCustomMode ? "custom" : selectedScenarioId}>
                 {scenarios.map(s => (
                   <option key={s.scenario_id} value={s.scenario_id}>
-                    Scenario {s.scenario_id}: {s.fault_type.replace(/_/g, " ")}
+                    Scenario {s.scenario_id}: {s.fault_type.replace(/_/g, " ")} [{s.source_type || "Synthetic Safe Mode"}]
                   </option>
                 ))}
                 <option value="custom">⚙️ Upload Custom Crash Dump JSON</option>
@@ -403,12 +435,51 @@ function App() {
               </button>
             </div>
 
+            {!isCustomMode && activeScenario && (() => {
+              const isESA = (activeScenario.source_type || "").includes("ESA");
+              const badgeColor = isESA ? "rgba(255, 183, 77, 0.9)" : "rgba(0, 229, 255, 0.7)";
+              const bgColor = isESA ? "rgba(255, 183, 77, 0.08)" : "rgba(0, 229, 255, 0.05)";
+              const borderColor = isESA ? "rgba(255, 183, 77, 0.25)" : "rgba(0, 229, 255, 0.15)";
+              return (
+                <div style={{ marginTop: "0.5rem" }}>
+                  <span style={{
+                    display: "inline-block",
+                    padding: "0.15rem 0.5rem",
+                    borderRadius: "3px",
+                    fontSize: "0.65rem",
+                    fontWeight: "600",
+                    letterSpacing: "0.05em",
+                    color: badgeColor,
+                    border: `1px solid ${borderColor}`,
+                    background: bgColor,
+                    marginBottom: "0.3rem",
+                  }}>
+                    {isESA ? "🛰️ REAL ESA TELEMETRY" : "🔬 SYNTHETIC SAFE MODE"}
+                  </span>
+                  {activeScenario.source_note && (
+                    <div style={{
+                      padding: "0.4rem 0.6rem",
+                      background: bgColor,
+                      border: `1px solid ${borderColor}`,
+                      borderRadius: "4px",
+                      fontSize: "0.7rem",
+                      color: "var(--text-muted)",
+                      fontStyle: "italic",
+                      marginTop: "0.25rem",
+                    }}>
+                      ℹ️ {activeScenario.source_note}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {isCustomMode && (
               <div style={{ marginTop: "1rem" }}>
                 <textarea
                   className="custom-select"
                   style={{ width: "100%", height: "120px", fontFamily: "monospace", fontSize: "0.75rem" }}
-                  placeholder='Paste crash dump JSON here (e.g. { "scenario_id": 4, "fault_type": "EPS_POWER_FAULT", ... })'
+                  placeholder='Paste crash dump JSON here (e.g. { "scenario_id": 4, "fault_type": "EPS_SOLAR_UNDERVOLT", ... })'
                   value={customDump}
                   onChange={(e) => setCustomDump(e.target.value)}
                 />

@@ -367,7 +367,7 @@ class CrashDumpRequest(BaseModel):
 
     # --- Core identifiers (always required) ---
     scenario_id: Optional[int] = Field(default=None, description="Scenario identifier used by the demo UI")
-    fault_type: Optional[str] = Field(default=None, description="Fault category, e.g. ADCS_SENSOR_FAULT")
+    fault_type: Optional[str] = Field(default=None, description="Fault category, e.g. ADCS_GYRO_SEU")
 
     # --- New structured fields (optional for backward compat) ---
     incident_id: Optional[str] = Field(
@@ -406,7 +406,7 @@ class CrashDumpRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "scenario_id": 1,
-                "fault_type": "ADCS_SENSOR_FAULT",
+                "fault_type": "ADCS_GYRO_SEU",
                 "incident_id": "INC-2026-0036",
                 "fault_register": "0x00000008",
                 "telecommand_context": {

@@ -1,879 +1,678 @@
-# SENTINEL — Complete Execution Prompts (All Issues Found & Fixed)
-## Full Audit Results + Structured Prompts with Tests
+# SENTINEL Complete Execution Prompts
 
----
+Project-leader version after Prompt 0 restructure.
 
-## MASTER AUDIT — 8 Issues Found
-
-| # | Issue | Severity | Blocks |
-|---|---|---|---|
-| 1 | **SCHEMA MISMATCH**: `prompts.py` fault names ≠ `evaluator.py` fault names ≠ `fault_simulator.py` | 🔴 CRITICAL | Accuracy = 0% |
-| 2 | **MISSING `affected_component` in OUTPUT_FORMAT**: `prompts.py` schema block doesn't show it | 🔴 CRITICAL | Pydantic fails constantly |
-| 3 | **AGENT INCOMPLETE**: No SSE streaming, no `analyze_crash_dump_stream()` | 🔴 CRITICAL | Frontend receives nothing live |
-| 4 | **TIMEOUT NOT APPLIED**: `timeout_seconds=90` defined but never enforced | 🟠 HIGH | Demo hangs forever |
-| 5 | **NO GRACEFUL FAILURE**: All retries fail → exception, main.py crashes with 500 | 🟠 HIGH | Demo crashes on stage |
-| 6 | **EVALUATOR/RUN_EVALUATION DISCONNECT**: May be scoring separately from agent | 🟠 HIGH | Eval numbers are wrong |
-| 7 | **FAULT TYPE NAME TRIPLE MISMATCH**: simulator → one set, prompts → different set, evaluator → first set again | 🔴 CRITICAL | Every eval metric is garbage |
-| 8 | **DATASET FINE-TUNE MISMATCH**: dataset_generator uses simulator fault names, fine-tune teaches different names | 🟠 HIGH | Fine-tuned model broken |
-
----
-
-## THE ROOT CAUSE OF ALL ISSUES
-
-Everything traces to one decision: fault type names were defined THREE times with different spellings.
+This file is the control document for the remaining implementation prompts. It is aligned to the current repository structure under:
 
 ```text
-fault_simulator.py     →  EPS_POWER_FAULT, ADCS_SENSOR_FAULT, OBC_SOFTWARE_FAULT, TCS_THERMAL_FAULT, COMMS_FAULT, MULTI_SYSTEM_CASCADE
-prompts.py signatures  →  EPS_SOLAR_UNDERVOLT, ADCS_GYRO_SEU, OBC_WATCHDOG_OVERFLOW, TCS_THERMAL_RUNAWAY, COMMS_TRANSPONDER_LOSS, MULTI_CASCADE
-evaluator.py registry  →  EPS_POWER_FAULT, ADCS_SENSOR_FAULT, OBC_SOFTWARE_FAULT, TCS_THERMAL_FAULT, COMMS_FAULT, MULTI_SYSTEM_CASCADE
+sentinel/backend/app/
+sentinel/backend/simulation/
+sentinel/backend/tests/
+sentinel/frontend/src/
 ```
 
-The LLM is taught in prompts.py to output `ADCS_GYRO_SEU`.
-The evaluator scores for exact match against `ADCS_SENSOR_FAULT`.
-Result: **fault_class_accuracy = 0% always**. This must be fixed first before anything else.
+Do not use old flat paths such as `agent.py`, `main.py`, `prompts.py`, `evaluator.py`, or `fault_simulator.py` at repository root. Those paths are stale.
 
-**Decision (pick ONE and apply everywhere):**  
-Use the prompts.py names because they are more precise and what the LLM already outputs:
+## Current Source Of Truth
+
+Key backend files:
 
 ```text
-ADCS_GYRO_SEU, EPS_SOLAR_UNDERVOLT, OBC_WATCHDOG_OVERFLOW,
-TCS_THERMAL_RUNAWAY, COMMS_TRANSPONDER_LOSS, MULTI_CASCADE
+sentinel/backend/app/main.py
+sentinel/backend/app/api/models.py
+sentinel/backend/app/api/scenarios.py
+sentinel/backend/app/agent/agent.py
+sentinel/backend/app/agent/prompts.py
+sentinel/backend/app/agent/rag.py
+sentinel/backend/app/agent/safety.py
+sentinel/backend/app/analytics/anomaly_detector.py
+sentinel/backend/app/analytics/evaluator.py
+sentinel/backend/app/analytics/run_evaluation.py
+sentinel/backend/simulation/fault_simulator.py
+sentinel/backend/simulation/dataset_generator.py
+sentinel/backend/data_tools/esa_adb_crash_dump.py
 ```
 
----
-
-## EXECUTION ORDER (DO THIS EXACTLY)
+Key frontend files:
 
 ```text
-STEP 0  →  Fix fault type names everywhere (30 min) — MUST BE FIRST
-STEP 1  →  Fix prompts.py OUTPUT_FORMAT schema block (15 min)
-STEP 2  →  Fix fault_simulator.py to use new names + add tests (45 min)
-STEP 3  →  Fix evaluator.py GROUND_TRUTH_REGISTRY (30 min)
-STEP 4  →  Add SSE streaming to agent.py + main.py (60 min)
-STEP 5  →  Add hard timeout + graceful failure partial output (30 min)
-STEP 6  →  Verify run_evaluation.py calls evaluator.py correctly (20 min)
-STEP 7  →  Fix dataset_generator.py fault names (15 min)
-STEP 8  →  Run full test suite — must get green
-STEP 9  →  Run 5x demo reliability check on 3 scenarios
-STEP 10 →  ESA real data integration test
+sentinel/frontend/src/App.jsx
+sentinel/frontend/src/App.css
+sentinel/frontend/public/index.html
+sentinel/frontend/public/landing.html
 ```
 
----
-
----
-
-# PROMPT 0 — SCHEMA ALIGNMENT FIX
-## “Fix the fault type name mismatch everywhere before touching anything else”
+Key data files:
 
 ```text
-You are my coding assistant for SENTINEL, a spacecraft fault diagnosis hackathon project.
+sentinel/backend/data/sentinel_training.jsonl
+sentinel/backend/data/train.jsonl
+sentinel/backend/data/valid.jsonl
+sentinel/backend/data/esa_crash_dumps/mission1_summary.json
+sentinel/backend/data/esa_crash_dumps/esa_mission1_id_109_crash_dump.json
+sentinel/backend/data/esa_crash_dumps/esa_mission1_id_109_sentinel_only.json
+```
 
-I have a CRITICAL bug: fault type names are inconsistent across three files.
-This causes fault_class_accuracy = 0% because the LLM outputs one name
-and the evaluator scores a different name.
+## Non-Negotiable Contracts
 
-## The Problem
+Canonical fault classes:
 
-fault_simulator.py generates crash dumps with these fault_type values:
-  EPS_POWER_FAULT, ADCS_SENSOR_FAULT, OBC_SOFTWARE_FAULT,
-  TCS_THERMAL_FAULT, COMMS_FAULT, MULTI_SYSTEM_CASCADE
+```text
+ADCS_GYRO_SEU
+EPS_SOLAR_UNDERVOLT
+OBC_WATCHDOG_OVERFLOW
+TCS_THERMAL_RUNAWAY
+COMMS_TRANSPONDER_LOSS
+MULTI_CASCADE
+```
 
-prompts.py teaches the LLM to recognize and output:
-  EPS_SOLAR_UNDERVOLT, ADCS_GYRO_SEU, OBC_WATCHDOG_OVERFLOW,
-  TCS_THERMAL_RUNAWAY, COMMS_TRANSPONDER_LOSS, MULTI_CASCADE
+LLM output schema:
 
-evaluator.py GROUND_TRUTH_REGISTRY keys are:
-  EPS_POWER_FAULT, ADCS_SENSOR_FAULT, OBC_SOFTWARE_FAULT,
-  TCS_THERMAL_FAULT, COMMS_FAULT, MULTI_SYSTEM_CASCADE
+```json
+{
+  "hypotheses": [
+    {
+      "rank": 1,
+      "root_cause": "ADCS_GYRO_SEU",
+      "affected_component": "GYRO_A",
+      "confidence": 0.91,
+      "causal_chain": ["event 1", "event 2"]
+    }
+  ],
+  "recovery_plan": [
+    {
+      "step": 1,
+      "command": "CMD_VERIFY_SEU_COUNTER",
+      "rationale": "why this command is first",
+      "wait_seconds": 5,
+      "verify": "what telemetry proves success",
+      "risk": "LOW"
+    }
+  ],
+  "confidence": 0.91,
+  "requires_human_review": true,
+  "reasoning_summary": "short explanation"
+}
+```
 
-The LLM outputs ADCS_GYRO_SEU but evaluator expects ADCS_SENSOR_FAULT → miss.
+SSE event schema for the React dashboard:
 
-## The Fix — Canonical Names (USE THESE EVERYWHERE)
+```json
+{
+  "event_type": "thought",
+  "data": "plain text or JSON string",
+  "step_number": 1
+}
+```
 
-The canonical fault type names from now on are the SPECIFIC ones from prompts.py
-because they describe WHAT happened, not just which subsystem:
+Do not replace this with `{"type": "...", "content": "...", "timestamp": ...}`. That is the old draft format and does not match `SSEEvent` in `sentinel/backend/app/api/models.py`.
 
-  ADCS_GYRO_SEU         (was: ADCS_SENSOR_FAULT)
-  EPS_SOLAR_UNDERVOLT   (was: EPS_POWER_FAULT)
-  OBC_WATCHDOG_OVERFLOW (was: OBC_SOFTWARE_FAULT)
-  TCS_THERMAL_RUNAWAY   (was: TCS_THERMAL_FAULT)
-  COMMS_TRANSPONDER_LOSS (was: COMMS_FAULT)
-  MULTI_CASCADE         (was: MULTI_SYSTEM_CASCADE)
+Primary API routes:
 
-## Task 1 — Update fault_simulator.py
+```text
+GET  /health
+GET  /api/health
+GET  /scenarios
+GET  /api/scenarios
+POST /analyze
+POST /api/analyze
+GET  /api/analyze    # compatibility EventSource route for public/index.html
+```
 
-In fault_simulator.py:
-1. Change _VALID_FAULT_TYPES frozenset to use the new canonical names
-2. Change every method that generates a crash dump to use the new fault_type values:
-   - generate_crash_dump() method: the returned dict "fault_type" field
-   - All 6 private fault generator methods: their fault_register strings and labels
-   - _generate_eps_power_fault() → should now generate dumps with fault_type = "EPS_SOLAR_UNDERVOLT"
-   - _generate_adcs_sensor_fault() → fault_type = "ADCS_GYRO_SEU"
-   - _generate_obc_software_fault() → fault_type = "OBC_WATCHDOG_OVERFLOW"
-   - _generate_tcs_thermal_fault() → fault_type = "TCS_THERMAL_RUNAWAY"
-   - _generate_comms_fault() → fault_type = "COMMS_TRANSPONDER_LOSS"
-   - _generate_multi_cascade() → fault_type = "MULTI_CASCADE"
-3. Update get_ground_truth() method: change all 6 root_cause_classification values
-   to use the new canonical names
-4. Keep the method names unchanged (internal implementation detail)
+If you add `/api/analyze/stream`, keep it as a backwards-compatible alias. Do not remove the current routes.
 
-## Task 2 — Update evaluator.py GROUND_TRUTH_REGISTRY
+ESA-ADB truth boundary:
 
-Change all 6 GROUND_TRUTH_REGISTRY keys AND their "root_cause" values
-to use the canonical names:
+```text
+ESA-ADB gives real anonymized telemetry, telecommand timing, anomaly intervals, affected channels, and event taxonomy.
+ESA-ADB does not give engineering root cause, confirmed safe-mode state, spacecraft command names, or recovery labels.
+Synthetic incidents provide root-cause and recovery supervision.
+```
 
-  "ADCS_GYRO_SEU": { "root_cause": "ADCS_GYRO_SEU", ... }
-  "EPS_SOLAR_UNDERVOLT": { "root_cause": "EPS_SOLAR_UNDERVOLT", ... }
-  "OBC_WATCHDOG_OVERFLOW": { "root_cause": "OBC_WATCHDOG_OVERFLOW", ... }
-  "TCS_THERMAL_RUNAWAY": { "root_cause": "TCS_THERMAL_RUNAWAY", ... }
-  "COMMS_TRANSPONDER_LOSS": { "root_cause": "COMMS_TRANSPONDER_LOSS", ... }
-  "MULTI_CASCADE": { "root_cause": "MULTI_CASCADE", ... }
+## Recommended Frontend Demo Flow
 
-Keep all other fields (confidence, risk_level, keywords, etc.) unchanged.
-Also update DEMO_FAULT_TYPES list at the bottom.
+Use both a live-looking flow and reliable presets.
 
-## Task 3 — Update dataset_generator.py
+1. Live Safe-Mode Stream:
+   - Start in `NOMINAL`.
+   - Stream telemetry values.
+   - Highlight an anomaly.
+   - Transition `NOMINAL -> ALERT -> SAFE_MODE`.
+   - Freeze the pre-fault telemetry window.
+   - Generate a crash-dump JSON.
+   - Start the agent and stream reasoning.
+   - Show hypotheses, causal chain, recovery plan, and safety/human-review gate.
 
-In dataset_generator.py, anywhere it references the old fault type names
-(ADCS_SENSOR_FAULT, EPS_POWER_FAULT, etc.) update them to the canonical names.
-Also update any labels in generated JSONL training data samples.
+2. Incident Library:
+   - `Synthetic Safe Mode: ADCS Gyro SEU`
+   - `Synthetic Safe Mode: EPS Solar Undervolt`
+   - `Synthetic Safe Mode: OBC Watchdog Overflow`
+   - `Synthetic Safe Mode: TCS Thermal Runaway`
+   - `Real ESA Telemetry: id_109 Multivariate Anomaly`
+   - `Real ESA Telemetry: Communication Gap`
 
-## Tests to Write (write these AFTER making all changes)
+3. Upload/Paste Crash Dump JSON:
+   - Keep this for judge questions and quick modified-input demos.
 
-File: test_schema_alignment.py
+The source label must be visible in the UI. Do not imply ESA examples have confirmed recovery labels.
 
-Tests to include:
+## Execution Order
 
-1. test_simulator_fault_types_canonical()
-   - Generate one crash dump for each of the 6 canonical fault types
-   - Assert dump["fault_type"] matches the canonical name exactly
-   - Assert fault_type is a key in GROUND_TRUTH_REGISTRY
+Run this order:
 
-2. test_ground_truth_registry_alignment()
-   - For each key in GROUND_TRUTH_REGISTRY:
-     assert key == GROUND_TRUTH_REGISTRY[key]["root_cause"]
-   - Assert all 6 canonical names are present as keys
+```text
+PROMPT 0.5 -> contract audit after restructure
+PROMPT 1   -> schema, prompt, dataset, and test alignment
+PROMPT 2   -> API streaming and frontend integration
+PROMPT 3   -> evaluation pipeline and ablations
+PROMPT 4   -> ESA real telemetry and early warning
+PROMPT 5   -> final demo reliability and submission hardening
+```
 
-3. test_evaluator_scores_correct_name()
-   - Create a mock response dict with root_cause = "ADCS_GYRO_SEU" rank 1
-   - Call evaluate_response(mock_response, "ADCS_GYRO_SEU")
-   - Assert fault_class_correct = True
-   - Also test that evaluate_response with root_cause = "ADCS_SENSOR_FAULT" (old name)
-     returns fault_class_correct = False (to confirm old names no longer accepted)
+Prompt 0 was the restructure. Do not run another broad restructure unless a current test proves it is necessary.
 
-4. test_prompts_fault_signature_names_match_registry()
-   - Import FAULT_SIGNATURES string from prompts.py
-   - For each canonical name, assert it appears in FAULT_SIGNATURES
-   - This confirms prompts.py teaches the LLM exactly the names evaluator expects
+---
 
-5. test_no_old_names_in_simulator()
-   - Import SatelliteFaultSimulator
-   - Assert "EPS_POWER_FAULT" not in sim._VALID_FAULT_TYPES
-   - Assert "ADCS_SENSOR_FAULT" not in sim._VALID_FAULT_TYPES
-   - (same for all 6 old names)
+# PROMPT 0.5 - POST-RESTRUCTURE CONTRACT AUDIT
 
-Run command: python -m pytest test_schema_alignment.py -v
-Expected: 5/5 tests pass
+```text
+You are my coding assistant and project lead for SENTINEL.
 
-Show me the updated _VALID_FAULT_TYPES in fault_simulator.py first.
-Then show the updated GROUND_TRUTH_REGISTRY keys in evaluator.py.
-Then write test_schema_alignment.py.
+I already ran Prompt 0 and the repository has been restructured. Before changing feature code, audit the current structure and contracts.
+
+Read these files first:
+
+- SENTINEL_4Day_Master_Planner.md
+- SENTINEL_Hackathon_Strategy_v2.md
+- sentinel/docs/person1_esa_crash_dump_workflow.md
+- sentinel/backend/app/main.py
+- sentinel/backend/app/api/models.py
+- sentinel/backend/app/api/scenarios.py
+- sentinel/backend/app/agent/agent.py
+- sentinel/backend/app/agent/prompts.py
+- sentinel/backend/simulation/fault_simulator.py
+- sentinel/backend/simulation/dataset_generator.py
+- sentinel/backend/app/analytics/evaluator.py
+- sentinel/backend/app/analytics/run_evaluation.py
+- sentinel/frontend/src/App.jsx
+
+Tasks:
+
+1. Print the active source tree summary. Confirm that active backend code is under `sentinel/backend/app` and `sentinel/backend/simulation`.
+2. Confirm `sentinel/backend/data_tools/esa_adb_crash_dump.py` exists. If it only exists under `__pycache__`, restore the source file to `sentinel/backend/data_tools/esa_adb_crash_dump.py`.
+3. Search for stale labels outside intentional negative tests:
+   - EPS_POWER_FAULT
+   - ADCS_SENSOR_FAULT
+   - OBC_SOFTWARE_FAULT
+   - TCS_THERMAL_FAULT
+   - COMMS_FAULT
+   - MULTI_SYSTEM_CASCADE
+4. Search generated JSONL for stale `"component"` output keys. Training labels must use `"affected_component"`.
+5. Confirm React expects SSE fields `event_type`, `data`, and `step_number`.
+6. Confirm backend has `/health`, `/api/health`, `/scenarios`, `/api/scenarios`, `/analyze`, and `/api/analyze` routes.
+7. Run targeted tests:
+   - `venv/bin/python -m pytest sentinel/backend/tests/test_schema_alignment.py -q`
+   - `venv/bin/python -m pytest sentinel/backend/tests/test_pipeline.py -q`
+   - `venv/bin/python -m pytest sentinel/backend/tests/test_generate_crash_dump.py -q`
+   - `venv/bin/python sentinel/backend/tests/test_models.py`
+
+Fix only confirmed contract mismatches. Do not rewrite the architecture.
+
+At the end, report:
+
+- What files exist now.
+- Which stale references remain and whether they are intentional negative tests.
+- Which tests passed.
+- Whether Prompts 1-5 can run safely.
 ```
 
 ---
 
----
-
-# PROMPT 1 — FIX OUTPUT_FORMAT IN PROMPTS.PY
-## “The system prompt schema block is missing affected_component — LLM never includes it, Pydantic always fails”
+# PROMPT 1 - SCHEMA, PROMPT, DATASET, AND TEST ALIGNMENT
 
 ```text
 You are my coding assistant for SENTINEL.
 
-## The Problem
+Goal: Validate that the schema, prompt, simulator, generated labels, and tests all agree. The codebase should already be perfectly aligned. If you find any misalignment or issues that are not as intended, make the necessary improvements.
 
-In prompts.py, the OUTPUT_FORMAT section shows this JSON schema to the LLM:
+Use these actual paths:
 
-"hypotheses": [
-  {
-    "rank": 1,
-    "root_cause": "",
-    "confidence": ,
-    "causal_chain": [...]
-  }
-]
+- sentinel/backend/app/api/models.py
+- sentinel/backend/app/agent/prompts.py
+- sentinel/backend/simulation/fault_simulator.py
+- sentinel/backend/simulation/dataset_generator.py
+- sentinel/backend/app/analytics/evaluator.py
+- sentinel/backend/tests/
+- sentinel/backend/data/
 
-BUT models.py Hypothesis requires:
-  - rank (int, 1-3) ✅
-  - root_cause (str) ✅
-  - affected_component (str, min_length=2) ❌ MISSING FROM SCHEMA SHOWN TO LLM
-  - confidence (float) ✅
-  - causal_chain (List[str], min 2 items) ✅
+Required canonical fault classes:
 
-Because affected_component is NOT in the OUTPUT_FORMAT schema block,
-the LLM does not include it. Pydantic validation fails EVERY TIME.
-The retry fires, the repair prompt mentions affected_component, sometimes
-the second attempt works — but this means EVERY call has at least 2 LLM
-calls, doubling latency, and sometimes fails even then.
+- ADCS_GYRO_SEU
+- EPS_SOLAR_UNDERVOLT
+- OBC_WATCHDOG_OVERFLOW
+- TCS_THERMAL_RUNAWAY
+- COMMS_TRANSPONDER_LOSS
+- MULTI_CASCADE
 
-## The Fix
+Tasks:
 
-Update the OUTPUT_FORMAT constant in prompts.py.
+1. Validate `SentinelOutput`, `Hypothesis`, and `RecoveryStep` in `app/api/models.py`.
+   - `Hypothesis` must require `affected_component`, not `component`.
+   - Exactly 3 hypotheses must validate.
+   - Recovery steps must include `step`, `command`, `rationale`, `wait_seconds`, `verify`, and `risk`.
+   - If not as intended, make improvements.
 
-The schema block for each hypothesis must show:
-{
-  "rank": 1,
-  "root_cause": "<fault class e.g. ADCS_GYRO_SEU>",
-  "affected_component": "<specific component e.g. GYRO_A>",
-  "confidence": <0.0-1.0>,
-  "causal_chain": [
-    "<event 1>",
-    "<event 2>",
-    "<event 3>"
-  ]
-}
+2. Validate `OUTPUT_FORMAT` in `app/agent/prompts.py`.
+   - It must show `affected_component`.
+   - It must not show `"component"` as an output key.
+   - It must use canonical fault names.
+   - It must tell the model not to fabricate telemetry parameter names.
+   - If not as intended, make improvements.
 
-Also add an explanatory note:
-"affected_component: the specific hardware component (e.g. GYRO_A, SOLAR_ARRAY_A, TRANSPONDER_B)"
+3. Validate `simulation/fault_simulator.py`.
+   - `_VALID_FAULT_TYPES` must use only canonical names.
+   - `generate_crash_dump()` must echo the canonical `fault_type`.
+   - `get_ground_truth()` must return canonical `root_cause_classification`.
+   - If not as intended, make improvements.
 
-## Full Corrected OUTPUT_FORMAT Block
+4. Validate `simulation/dataset_generator.py`.
+   - Generated assistant JSON must use `affected_component`.
+   - Generated root causes must use canonical names.
+   - Generated recovery commands must be valid `CMD_UPPER_SNAKE_CASE`.
+   - Prefer commands already in `app/agent/safety.py` whitelist.
+   - If not as intended, make improvements.
 
-Replace the entire OUTPUT_FORMAT constant. Here is what it must contain:
+5. Only regenerate dataset files if you had to make changes to the generator:
+   - `sentinel/backend/data/sentinel_training.jsonl` with 600 examples.
+   - `sentinel/backend/data/train.jsonl` with first 540 lines.
+   - `sentinel/backend/data/valid.jsonl` with last 60 lines.
 
-Header line: "OUTPUT FORMAT — STRICT JSON, NO EXCEPTIONS:"
+6. Run the test suite. Update tests ONLY if they contradict canonical names.
+   - Keep intentional negative tests for old names.
+   - Do not delete useful tests just to make the suite pass.
 
-Then a description of the root-level object:
-{
-  "hypotheses": [3 items, see below],
-  "recovery_plan": [1 or more steps, see below],
-  "confidence": <float matching rank-1 hypothesis confidence>,
-  "requires_human_review": <true if confidence < 0.70 or any step is HIGH risk>,
-  "reasoning_summary": "<2-4 sentences>"
-}
+Validation commands:
 
-Each hypothesis item:
-{
-  "rank": <1, 2, or 3>,
-  "root_cause": "<fault class — must match known fault signatures>",
-  "affected_component": "<specific hardware component, e.g. GYRO_A, SOLAR_ARRAY_A>",
-  "confidence": <float 0.0-1.0>,
-  "causal_chain": ["<event 1>", "<event 2>", "<event 3 or more>"]
-}
+```bash
+venv/bin/python -m pytest sentinel/backend/tests/test_schema_alignment.py -q
+venv/bin/python -m pytest sentinel/backend/tests/test_pipeline.py -q
+venv/bin/python -m pytest sentinel/backend/tests/test_generate_crash_dump.py -q
+venv/bin/python sentinel/backend/tests/test_models.py
+rg -n 'EPS_POWER_FAULT|ADCS_SENSOR_FAULT|OBC_SOFTWARE_FAULT|TCS_THERMAL_FAULT|COMMS_FAULT|MULTI_SYSTEM_CASCADE|"component"' sentinel/backend/data --glob '*.jsonl'
+```
 
-Each recovery_plan step:
-{
-  "step": <1-indexed integer>,
-  "command": "<CMD_UPPER_SNAKE_CASE>",
-  "rationale": "<why this command now>",
-  "wait_seconds": <integer seconds to wait before verifying>,
-  "verify": "<condition to check after wait>",
-  "risk": "<LOW | MEDIUM | HIGH>"
-}
+Expected:
 
-Rules at the bottom (keep existing ones, add):
-"- Each hypothesis MUST include affected_component (the hardware component, not the subsystem)"
-"- affected_component examples: GYRO_A, GYRO_B, SOLAR_ARRAY_A, TRANSPONDER_B, HEATER_ZONE_1, OBC_CPU"
-
-## Tests to Write
-
-File: test_output_format.py
-
-1. test_output_format_contains_affected_component()
-   - Import OUTPUT_FORMAT from prompts.py
-   - Assert "affected_component" in OUTPUT_FORMAT
-   - Assert "GYRO_A" in OUTPUT_FORMAT (example must appear)
-
-2. test_build_messages_schema_integrity()
-   - Call build_messages(crash_dump_json='{"test": true}')
-   - Assert messages["role"] == "system"
-   - Assert "affected_component" in messages["content"]
-   - Assert "wait_seconds" in messages["content"]
-
-3. test_repair_prompt_matches_schema()
-   - Import _REPAIR_PROMPT from agent.py
-   - Assert "affected_component" in _REPAIR_PROMPT
-   - Assert "wait_seconds" in _REPAIR_PROMPT
-
-4. test_pydantic_validates_complete_llm_output()
-   - Build a minimal valid dict that matches the schema:
-     hypotheses with rank 1/2/3, each with affected_component,
-     recovery_plan with 2 steps, confidence=0.85, requires_human_review=False,
-     reasoning_summary="Test."*3
-   - Call SentinelOutput.model_validate(valid_dict)
-   - Assert no exception raised
-
-5. test_pydantic_rejects_missing_affected_component()
-   - Build a dict with hypotheses that have NO affected_component field
-   - Assert SentinelOutput.model_validate(bad_dict) raises ValidationError
-
-Run command: python -m pytest test_output_format.py -v
-Expected: 5/5 pass
-
-Show me the full updated OUTPUT_FORMAT constant first.
+- The test commands pass.
+- The final `rg` over JSONL returns no stale old labels and no `"component"` output keys.
 ```
 
 ---
 
----
-
-# PROMPT 2 — FIX AGENT.PY COMPLETION + ADD SSE STREAMING
-## “Agent is missing streaming. Add analyze_crash_dump_stream() and wire it to main.py”
+# PROMPT 2 - API STREAMING AND FRONTEND INTEGRATION
 
 ```text
 You are my coding assistant for SENTINEL.
 
-## What's Missing in agent.py
+Goal: Validate that the backend/frontend streaming path is reliable and that the current schema is used correctly. The SSE models, streaming endpoints, and React parser should already be implemented. If you find any issues that are not as intended, make the necessary improvements.
 
-The agent docstring lists "Step 11: SSE streaming via analyze_crash_dump_stream()"
-as a FUTURE integration point that is NOT YET IMPLEMENTED.
+Use these actual paths:
 
-main.py is only 2422 chars — it likely has a synchronous endpoint.
-The frontend needs SSE (Server-Sent Events) streaming with these event types:
-  {"type": "thought", "content": "...", "timestamp": 1234.56}
-  {"type": "action",  "content": "...", "timestamp": 1234.56}
-  {"type": "observation", "content": "...", "timestamp": 1234.56}
-  {"type": "result", "content": "<full SentinelOutput JSON>", "timestamp": 1234.56}
-  {"type": "error",  "content": "...", "timestamp": 1234.56}
+- sentinel/backend/app/main.py
+- sentinel/backend/app/api/models.py
+- sentinel/backend/app/api/scenarios.py
+- sentinel/backend/app/agent/agent.py
+- sentinel/frontend/src/App.jsx
+- sentinel/frontend/src/App.css
+- sentinel/frontend/public/index.html
 
-## Task 1 — Add analyze_crash_dump_stream() to agent.py
+Important current contract:
 
-Add this async generator method to the SentinelAgent class:
+- React dashboard posts crash dumps to `POST /analyze` or `POST /api/analyze`.
+- Backend streams SSE chunks as `data: <SSEEvent JSON>`.
+- `SSEEvent` JSON fields are `event_type`, `data`, and `step_number`.
+- `event_type` values are `status`, `thought`, `action`, `observation`, `result`, and `error`.
+- `result.data` is a JSON string matching `SentinelOutput`.
+- `GET /api/analyze` exists separately for the static `public/index.html` EventSource client and maps events to `telemetry`, `trace`, and `done`.
 
-async def analyze_crash_dump_stream(
-    self,
-    crash_dump: dict | str,
-    anomalous_parameters: list[str] | None = None,
-    retrieved_procedures: list[str] | None = None,
-    system_prompt_override: str | None = None,
-) -> AsyncGenerator[dict, None]:
+Tasks:
 
-It must yield SSE event dicts at each pipeline stage:
+1. Validate `app/main.py` routes.
+   - Ensure `/health` and `/api/health` exist.
+   - Ensure `/scenarios` and `/api/scenarios` exist.
+   - Ensure `/analyze` and `/api/analyze` exist.
+   - Ensure `GET /api/analyze` exists if `public/index.html` uses it.
+   - If not as intended, make improvements.
 
-Stage 1 — yield thought: "Parsing crash dump and extracting telemetry..."
-Stage 2 — yield action: "Running z-score anomaly pre-filter on {N} parameters..."
-Stage 3 — yield observation: "Anomalous parameters: {param_list}"
-Stage 4 — yield action: "Retrieving ECSS procedures via RAG for query: {query}"
-Stage 5 — yield observation: "Retrieved {N} procedure snippet(s)"
-Stage 6 — yield action: "Calling {model_name} for fault diagnosis..."
-Stage 7 — yield thought: "Parsing and validating LLM response..."
-Stage 8 — yield action: "Running safety validator on {N} recovery steps..."
-Stage 9 — yield observation: "Safety check: {N_blocked} blocked, {N_ok} approved. {safety_summary}"
-Stage 10 — yield result: the full SentinelOutput serialized as JSON string
+2. Validate `SentinelAgent.analyze_crash_dump_stream()` in `app/agent/agent.py`.
+   - It must yield `SSEEvent` objects, not raw dicts.
+   - It must emit useful staged events: ingest, anomaly detection, RAG retrieval, LLM reasoning, safety validation/result.
+   - On failure, it must emit an `error` event and not crash the server.
+   - If not as intended, make improvements.
 
-On any exception: yield error event and return.
+3. Validate React parsing in `frontend/src/App.jsx`.
+   - It must parse `data: ...` SSE blocks from the POST stream.
+   - It must route by `event.event_type`.
+   - It must parse `event.data` as JSON only for `result`.
+   - It must not expect `type/content/timestamp`.
+   - If not as intended, make improvements.
 
-Each yielded dict must have exactly: {"type": str, "content": str, "timestamp": float}
-Use time.time() for timestamp.
+4. Improve frontend scenario display if needed.
+   - Show source type: `Synthetic Safe Mode` vs `Real ESA Telemetry`.
+   - Keep custom JSON paste/upload.
+   - Avoid overclaiming ESA examples as confirmed root-cause cases.
 
-IMPORTANT: The actual LLM call (Stage 6) must run in a thread executor
-because google-genai is synchronous. Use:
-  import asyncio
-  loop = asyncio.get_event_loop()
-  raw_response = await loop.run_in_executor(None, self._call_llm, messages)
+5. Validate tests. Add or update tests with mocked LLM calls if needed.
+   - No real Gemini/OpenAI call in tests.
+   - Test `/api/health`.
+   - Test `/api/scenarios`.
+   - Test POST `/api/analyze` returns `text/event-stream`.
+   - Test the first few streamed events have fields `event_type` and `data`.
+   - Test a final `result` event validates as `SentinelOutput`.
 
-## Task 2 — Add Hard Timeout
+Validation commands:
 
-In analyze_crash_dump() (the synchronous version), add timeout enforcement:
+```bash
+venv/bin/python -m pytest sentinel/backend/tests/test_schema_alignment.py -q
+venv/bin/python -m pytest sentinel/backend/tests/test_pipeline.py -q
+venv/bin/python -m pytest sentinel/backend/tests/test_agent.py -q
+venv/bin/python -m pytest sentinel/backend/tests/test_rag.py -q
+```
 
-import threading
-
-def _run_with_timeout(fn, timeout_seconds, *args, **kwargs):
-    result = [None]
-    error = [None]
-    def target():
-        try:
-            result = fn(*args, **kwargs)
-        except Exception as e:
-            error = e
-    t = threading.Thread(target=target, daemon=True)
-    t.start()
-    t.join(timeout=timeout_seconds)
-    if t.is_alive():
-        raise TimeoutError(f"Agent exceeded {timeout_seconds}s timeout")
-    if error:
-        raise error
-    return result
-
-Wrap the self._call_llm(messages) call inside _run_with_timeout.
-
-In analyze_crash_dump_stream(), use asyncio.wait_for on the run_in_executor call:
-  raw_response = await asyncio.wait_for(
-      loop.run_in_executor(None, self._call_llm, messages),
-      timeout=self.config.timeout_seconds
-  )
-
-## Task 3 — Add Graceful Partial Output on Failure
-
-Add a class method or helper that returns a safe partial SentinelOutput
-when the agent fails after all retries:
-
-@staticmethod
-def _make_timeout_output(reason: str) -> SentinelOutput:
-    return SentinelOutput(
-        hypotheses=[
-            Hypothesis(rank=1, root_cause="UNKNOWN", affected_component="UNKNOWN",
-                      confidence=0.0, causal_chain=["Diagnosis failed", reason]),
-            Hypothesis(rank=2, root_cause="UNKNOWN", affected_component="UNKNOWN",
-                      confidence=0.0, causal_chain=["Diagnosis failed", reason]),
-            Hypothesis(rank=3, root_cause="UNKNOWN", affected_component="UNKNOWN",
-                      confidence=0.0, causal_chain=["Diagnosis failed", reason]),
-        ],
-        recovery_plan=[RecoveryStep(
-            step=1,
-            command="CMD_REQUEST_HUMAN_REVIEW",
-            rationale=f"Automated diagnosis failed: {reason}",
-            wait_seconds=0,
-            verify="Human operator reviews crash dump manually",
-            risk=RiskLevel.HIGH
-        )],
-        confidence=0.0,
-        requires_human_review=True,
-        reasoning_summary=f"Diagnosis failed: {reason}. Human review required.",
-        status=AnalysisStatus.ERROR
-    )
-
-In analyze_crash_dump(), when last_error is raised and all retries exhausted:
-Instead of re-raising, log it and return self._make_timeout_output(str(last_error)).
-Only still raise on LLMCallError (API auth/network failure — these are real errors
-that should propagate, not be silently swallowed).
-
-## Task 4 — Update main.py
-
-main.py needs a proper SSE streaming endpoint. Replace the existing
-/api/analyze endpoint (or add /api/analyze/stream) with:
-
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
-import json, asyncio
-from agent import SentinelAgent, AgentConfig
-
-app = FastAPI(title="SENTINEL API")
-app.add_middleware(CORSMiddleware, allow_origins=["*"],
-                   allow_methods=["*"], allow_headers=["*"])
-
-@app.post("/api/analyze/stream")
-async def analyze_stream(request: dict):
-    agent = SentinelAgent()
-
-    async def event_generator():
-        async for event in agent.analyze_crash_dump_stream(
-            crash_dump=request,
-            anomalous_parameters=request.get("_anomalous_params"),
-        ):
-            yield f"data: {json.dumps(event)}\n\n"
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache",
-                                      "X-Accel-Buffering": "no"})
-
-@app.post("/api/analyze")
-async def analyze_sync(request: dict):
-    """Synchronous fallback for testing and demo cache."""
-    agent = SentinelAgent()
-    result = agent.analyze_with_rag(crash_dump=request)
-    return result.model_dump()
-
-@app.get("/api/health")
-async def health():
-    return {"status": "ok", "service": "SENTINEL"}
-
-## Tests to Write
-
-File: test_agent_streaming.py
-
-1. test_stream_yields_all_event_types()
-   - Use a mock LLM that returns a valid JSON string synchronously
-   - Collect all events from analyze_crash_dump_stream(mock_crash_dump)
-   - Assert at least one event of each type: thought, action, observation, result
-   - Assert final event type == "result"
-
-2. test_stream_result_event_is_valid_sentinel_output()
-   - Run streaming with mock LLM
-   - Find the "result" event
-   - Parse event["content"] as JSON
-   - Call SentinelOutput.model_validate(parsed) — should not raise
-
-3. test_timeout_returns_partial_output()
-   - Create AgentConfig with timeout_seconds=0.001 (immediate timeout)
-   - Call analyze_crash_dump(valid_crash_dump)
-   - Assert result is SentinelOutput (not exception)
-   - Assert result.status == AnalysisStatus.ERROR
-   - Assert result.requires_human_review == True
-   - Assert result.confidence == 0.0
-
-4. test_all_retries_exhausted_returns_partial_output()
-   - Mock _call_llm to always return invalid JSON "not json at all"
-   - Call analyze_crash_dump(valid_crash_dump)
-   - Assert returns SentinelOutput (not exception)
-   - Assert status == AnalysisStatus.ERROR
-
-5. test_stream_error_event_on_failure()
-   - Mock _call_llm to raise LLMCallError
-   - Collect events from analyze_crash_dump_stream
-   - Assert "error" event is yielded
-   - Assert after "error" event, no more events
-
-6. test_main_health_endpoint()
-   - Use FastAPI TestClient
-   - GET /api/health
-   - Assert status_code == 200
-   - Assert response["status"] == "ok"
-
-Run command: python -m pytest test_agent_streaming.py -v
-Expected: 6/6 pass
-
-Show me the full analyze_crash_dump_stream() method first.
-Then show the updated main.py.
+If script-style tests call `sys.exit()` at import time, run them directly instead of through pytest and report that clearly.
 ```
 
 ---
 
----
-
-# PROMPT 3 — FIX EVALUATOR + RUN_EVALUATION PIPELINE
-## “Verify evaluator.py and run_evaluation.py are wired correctly and measure real metrics”
+# PROMPT 3 - EVALUATION PIPELINE AND REAL METRICS
 
 ```text
 You are my coding assistant for SENTINEL.
 
-## Context
+Goal: Validate that the evaluation framework produces defensible real numbers, without inventing metrics. `evaluator.py` and `run_evaluation.py` should already be fully implemented with 8 specific metrics. If you find any issues that are not as intended, make the necessary improvements.
 
-After Prompt 0 fixes fault type names, we need to verify the full
-evaluation pipeline actually works end-to-end.
+Use these actual paths:
 
-## Task 1 — Audit run_evaluation.py
+- sentinel/backend/app/analytics/evaluator.py
+- sentinel/backend/app/analytics/run_evaluation.py
+- sentinel/backend/app/agent/agent.py
+- sentinel/backend/simulation/fault_simulator.py
+- sentinel/backend/data/
 
-Read run_evaluation.py and answer:
-1. Does it import and call SentinelEvaluator from evaluator.py?
-   OR does it have its own evaluation logic that duplicates evaluator.py?
-2. Does it call agent.analyze_with_rag() for each test scenario?
-   OR does it load pre-generated responses from a file?
-3. Does it generate evaluation_results.json with the structure we need?
-4. What is the test set — does it use a test.jsonl file? Does that file exist?
+Current situation to validate:
 
-Show me the answer to these 4 questions by reading the actual code.
+1. `evaluator.py` scores response JSON against canonical ground truth registry.
+2. `run_evaluation.py` is a file-response evaluator rather than a live-agent runner.
+3. Generated training JSONL is not the same thing as held-out live evaluation results.
 
-## Task 2 — Fix the Pipeline if Disconnected
+Tasks:
 
-If run_evaluation.py does NOT call evaluator.py, wire it:
+1. Read and validate `run_evaluation.py`:
+   - Does it import the real `SentinelEvaluator`?
+   - Does it load response files, run the live agent, or both?
+   - What JSONL shape does it expect?
+   - What output files does it write?
+   - If not as intended, make improvements.
 
-from evaluator import SentinelEvaluator, GROUND_TRUTH_REGISTRY
-evaluator = SentinelEvaluator("full_system")
-# for each test scenario:
-score = evaluator.add(json.dumps(result.model_dump()), true_fault_type, latency_ms)
-report = evaluator.report()
+2. Validate existing file-response evaluation.
+   - Ensure the mode that scores pre-generated candidate JSONL files is present and correct.
+   - Ensure imports are robust from the backend root, e.g. `from app.analytics.evaluator import ...`.
+   - If not as intended, make improvements.
 
-If run_evaluation.py DOES call evaluator.py but evaluator.py has old fault names,
-that's already fixed by Prompt 0. Verify it works after that fix.
+3. Add live evaluation only if it is missing.
+   - Suggested CLI: `--mode file|live`.
+   - For live mode, generate held-out synthetic crash dumps using `SatelliteFaultSimulator`.
+   - Run `SentinelAgent.analyze_with_rag()` with mocked/stubbed calls in tests, real calls only when user explicitly runs evaluation with API keys.
 
-## Task 3 — Add 4-Config Ablation Support
+4. Add ablation support carefully (if missing).
+   - `--config full`: anomaly detector + RAG + safety.
+   - `--config no-rag`: use fallback KB / no PDF RAG.
+   - `--config no-safety`: bypass deterministic safety only if `agent.py` supports an explicit `skip_safety` flag.
+   - `--config base-model`: baseline prompt with minimal/no domain system prompt.
+   - Do not break the default demo path.
 
-Add a --config flag to run_evaluation.py CLI:
-  --config full        (default: agent + RAG + safety)
-  --config no-rag      (disable RAG, use FALLBACK_KB only)
-  --config no-safety   (skip safety.py validation)
-  --config base-model  (no system prompt, raw LLM call only)
+5. Validate metrics are honest and implemented correctly.
+   - Keep fault-class accuracy.
+   - Keep confidence calibration.
+   - Keep recovery coverage.
+   - Keep JSON validity.
+   - Keep demo_scenario_success_rate.
+   - Keep requires_human_review_correct.
+   - Keep retry_malformed_rate.
+   - Keep mean_latency_ms.
+   - Add safety alignment only if the validation result is actually available.
+   - Never write placeholder numbers into results.
+   - If not as intended, make improvements.
 
-For no-rag: pass use_pdf_rag=False and fault_cues=[] to analyze_with_rag()
-For no-safety: add skip_safety=True param to analyze_crash_dump(), bypass the
-  safety.validate_recovery_plan() call when skip_safety=True
-For base-model: call the LLM directly with user message = crash dump JSON only,
-  no system prompt (system_prompt_override="")
+6. Output Validation:
+   - Check if evaluation scripts can write to `sentinel/backend/results/evaluation_results.json` and similar files.
 
-## Task 4 — Add Missing Metric: safety_alignment_rate
+Validation commands:
 
-Add should_be_safe to GROUND_TRUTH_REGISTRY for all 6 fault types:
-  ADCS_GYRO_SEU: should_be_safe=True
-  EPS_SOLAR_UNDERVOLT: should_be_safe=True
-  OBC_WATCHDOG_OVERFLOW: should_be_safe=False
-  TCS_THERMAL_RUNAWAY: should_be_safe=False
-  COMMS_TRANSPONDER_LOSS: should_be_safe=True
-  MULTI_CASCADE: should_be_safe=False
+```bash
+venv/bin/python -m pytest sentinel/backend/tests/test_schema_alignment.py -q
+venv/bin/python -m pytest sentinel/backend/tests/test_pipeline.py -q
+venv/bin/python -m pytest sentinel/backend/tests/test_rag.py -q
+venv/bin/python -m pytest sentinel/backend/tests/test_safety.py -q
+```
 
-Add metric 9: safety_alignment_rate
-  = % of scenarios where ValidationResult.is_safe matches should_be_safe
-  = only computable when safety validation runs (full and no-rag configs)
-
-## Tests to Write
-
-File: test_evaluation_pipeline.py
-
-1. test_run_evaluation_imports_evaluator()
-   - Import SentinelEvaluator from evaluator.py
-   - Assert it can be instantiated: SentinelEvaluator("test")
-   - Assert evaluator.add() and evaluator.report() exist
-
-2. test_evaluate_response_with_correct_canonical_name()
-   - Build a valid mock response JSON with root_cause = "ADCS_GYRO_SEU"
-   - Call evaluate_response(mock_json, "ADCS_GYRO_SEU")
-   - Assert result["fault_class_correct"] == True
-
-3. test_evaluate_response_with_wrong_name()
-   - Same but root_cause = "ADCS_SENSOR_FAULT" (old name)
-   - Assert result["fault_class_correct"] == False
-
-4. test_ground_truth_has_should_be_safe()
-   - For each key in GROUND_TRUTH_REGISTRY:
-     assert "should_be_safe" in GROUND_TRUTH_REGISTRY[key]
-   - Assert GROUND_TRUTH_REGISTRY["MULTI_CASCADE"]["should_be_safe"] == False
-   - Assert GROUND_TRUTH_REGISTRY["ADCS_GYRO_SEU"]["should_be_safe"] == True
-
-5. test_ablation_no_rag_config()
-   - Create AgentConfig
-   - Call agent.analyze_with_rag(crash_dump, use_pdf_rag=False) with a mock dump
-   - Assert result is SentinelOutput
-
-Run command: python -m pytest test_evaluation_pipeline.py -v
-Expected: 5/5 pass
-
-Show me what run_evaluation.py currently does first.
-Then show the fixes.
+If live evaluation requires `GEMINI_API_KEY`, do not fake success. Report that the code path is implemented but live numbers require the key.
 ```
 
 ---
 
----
-
-# PROMPT 4 — ESA REAL DATA INTEGRATION + EARLY WARNING
-## “Wire esa_adb_crash_dump.py to the agent and build early_warning.py”
+# PROMPT 4 - ESA REAL TELEMETRY AND EARLY WARNING
 
 ```text
 You are my coding assistant for SENTINEL.
 
-## Context
+Goal: integrate ESA-ADB honestly and add early-warning demo support.
 
-esa_adb_crash_dump.py is a complete tool that converts ESA-ADB telemetry
-into SENTINEL crash dump format. The file esa_mission1_id_109_sentinel_only.json
-already exists — it's the compact agent-ready version.
+Use these actual paths:
 
-The key limitation: ESA-ADB has NO engineering root cause labels.
-We cannot score root_cause_accuracy on ESA data.
-What we CAN test: does the agent produce valid output, set requires_human_review
-correctly, and not hallucinate?
+- ESA-Mission1/
+- sentinel/backend/data_tools/esa_adb_crash_dump.py
+- sentinel/backend/data/esa_crash_dumps/
+- sentinel/docs/person1_esa_crash_dump_workflow.md
+- sentinel/backend/app/analytics/anomaly_detector.py
+- sentinel/backend/app/analytics/
+- sentinel/backend/app/api/scenarios.py
+- sentinel/frontend/src/App.jsx
 
-## Task 1 — ESA Real Data Integration Test
+ESA facts:
 
-Write test_esa_integration.py:
+- `labels.csv` provides event ID, affected channel, start time, and end time.
+- `anomaly_types.csv` provides category, class, subclass, dimensionality, locality, and length.
+- `channels/channel_*.zip` contains real normalized telemetry streams.
+- `telecommands/telecommand_*.zip` contains real anonymized command occurrence streams.
+- Channel names and subsystem names are anonymized.
+- There is no real root-cause label or recovery command label.
 
-Load esa_mission1_id_109_sentinel_only.json
-Pass it to agent.analyze_with_rag() (full system config)
-Check these 4 things (no accuracy claim):
+Tasks:
 
-1. valid_output: result is SentinelOutput (no exception)
-2. human_review_set: result.requires_human_review == True
-3. low_confidence: result.confidence < 0.80
-4. no_hallucinated_param_names:
-   reasoning_summary and hypothesis root_cause must not contain parameter names
-   not in the crash dump
+1. Verify or rebuild ESA crash-dump artifacts.
+   - If `ESA-Mission1` exists, run summary/build through `data_tools/esa_adb_crash_dump.py`.
+   - Do not fully unzip 9+ GB unless explicitly needed.
+   - Prefer reading zipped pandas pickles directly.
 
-Save the result as data/esa_real_data_test_result.json with fields:
-  valid_output, human_review_set, low_confidence, no_hallucinated_params,
-  actual_confidence, actual_root_cause, actual_reasoning_summary
+Suggested commands:
 
-## Task 2 — Build early_warning.py
+```bash
+PYTHONPATH=sentinel/backend venv/bin/python sentinel/backend/data_tools/esa_adb_crash_dump.py summary \
+  --dataset ESA-Mission1 \
+  --output sentinel/backend/data/esa_crash_dumps/mission1_summary.json
 
-Create sentinel/backend/early_warning.py with this class:
+PYTHONPATH=sentinel/backend venv/bin/python sentinel/backend/data_tools/esa_adb_crash_dump.py build \
+  --dataset ESA-Mission1 \
+  --event-id id_109 \
+  --output sentinel/backend/data/esa_crash_dumps/esa_mission1_id_109_crash_dump.json \
+  --compact-output sentinel/backend/data/esa_crash_dumps/esa_mission1_id_109_sentinel_only.json
+```
 
-@dataclass
-class EarlyWarningAlert:
-    warning_issued_at_offset: str
-    anomalous_params: list[str]
-    max_z_score: float
-    suspected_fault_type: str
-    confidence: float
-    message: str
+2. Add ESA scenario metadata to `app/api/scenarios.py` if missing.
+   - Source type: `Real ESA Telemetry`.
+   - Fault type can be `ESA_ADB_ANOMALY` or similar.
+   - Include `operating_context.label_id`.
+   - Do not map anonymized `channel_41` to ADCS/EPS/TCS unless explicitly known.
 
-class EarlyWarningMonitor:
-    def __init__(self, window_minutes=5, check_interval_seconds=60, z_threshold=2.5)
+3. Add ESA integration tests.
+   - Load `esa_mission1_id_109_sentinel_only.json`.
+   - Mock the LLM response.
+   - Verify the backend accepts the crash dump.
+   - Verify output validates as `SentinelOutput`.
+   - Verify the test does not claim root-cause accuracy on ESA.
 
-    def simulate_pre_fault(self, crash_dump: dict) -> list[EarlyWarningAlert]:
-        pass
+4. Add early warning under package layout.
+   - Preferred path: `sentinel/backend/app/analytics/early_warning.py`.
+   - Use the existing z-score/anomaly detector where possible.
+   - Output `EarlyWarningAlert` objects with:
+     - warning offset
+     - anomalous parameters
+     - max z-score
+     - suspected fault type
+     - confidence
+     - message
 
-    def _heuristic_fault_type(self, anomalous_params: list[str]) -> tuple[str, float]:
-        if "Gyro_rate_degs" in anomalous_params or "SEU_counter" in anomalous_params:
-            return "ADCS_GYRO_SEU", 0.7
-        elif "V_bat" in anomalous_params or "I_sa" in anomalous_params or "SoC_pct" in anomalous_params:
-            return "EPS_SOLAR_UNDERVOLT", 0.7
-        elif "CPU_load_pct" in anomalous_params or "Watchdog_counter" in anomalous_params:
-            return "OBC_WATCHDOG_OVERFLOW", 0.7
-        elif "Component_temp_C" in anomalous_params or "Heater_power_W" in anomalous_params:
-            return "TCS_THERMAL_RUNAWAY", 0.7
-        elif "Transponder_lock" in anomalous_params or "SNR_dB" in anomalous_params:
-            return "COMMS_TRANSPONDER_LOSS", 0.7
-        else:
-            return "MULTI_CASCADE", 0.4
+5. Early warning heuristic can map known synthetic parameters:
+   - Gyro_rate_degs or SEU_counter -> ADCS_GYRO_SEU
+   - V_bat, I_sa, or SoC_pct -> EPS_SOLAR_UNDERVOLT
+   - CPU_load_pct or Watchdog_counter -> OBC_WATCHDOG_OVERFLOW
+   - Component_temp_C or Heater_power_W -> TCS_THERMAL_RUNAWAY
+   - Transponder_lock or SNR_dB -> COMMS_TRANSPONDER_LOSS
+   - Otherwise -> MULTI_CASCADE with low confidence
 
-Demo scenario:
-Generate an EPS_SOLAR_UNDERVOLT crash dump from simulator.
-Run simulate_pre_fault on it.
-Assert an alert is yielded at > T-60s before event.
-Assert the suspected_fault_type is "EPS_SOLAR_UNDERVOLT".
-Save output to data/early_warning_demo.json.
+6. Frontend:
+   - Add a `Live Safe-Mode Stream` demo mode if not present.
+   - Add real ESA incident presets.
+   - Clearly distinguish `Real ESA Telemetry` from `Synthetic Safe Mode`.
 
-## Tests to Write
+Validation commands:
 
-File: test_early_warning.py
+```bash
+venv/bin/python -m pytest sentinel/backend/tests/test_pipeline.py -q
+venv/bin/python -m pytest sentinel/backend/tests/test_schema_alignment.py -q
+venv/bin/python -m pytest sentinel/backend/tests/test_rag.py -q
+```
 
-1. test_early_warning_detects_eps_fault()
-   - Generate EPS_SOLAR_UNDERVOLT crash dump
-   - Run simulate_pre_fault on it
-   - Assert len(alerts) >= 1
-   - Assert at least one alert has suspected_fault_type == "EPS_SOLAR_UNDERVOLT"
-
-2. test_early_warning_alert_timing()
-   - Same as above
-   - Assert alert warning_issued_at_offset starts with "T-"
-   - Assert the offset seconds > 60
-
-3. test_esa_data_valid_output()
-   - Load esa_mission1_id_109_sentinel_only.json
-   - Mock the LLM call to return a valid response
-   - Assert mock result is SentinelOutput
-
-4. test_no_hallucinated_params_in_esa_result()
-   - Given a mock SentinelOutput for the ESA data
-   - Check reasoning_summary does not contain "GYRO_A" or "V_bat"
-
-Run command: python -m pytest test_early_warning.py -v
-Expected: 4/4 pass
+Add focused tests for ESA and early warning if they do not exist yet.
 ```
 
 ---
 
----
-
-# PROMPT 5 — FULL SYSTEM INTEGRATION TEST + DEMO RELIABILITY
-## “5x reliability check on all 3 demo scenarios before submitting”
+# PROMPT 5 - FINAL SYSTEM INTEGRATION AND DEMO RELIABILITY
 
 ```text
 You are my coding assistant for SENTINEL.
 
-This is the FINAL prompt. Run after ALL previous prompts are complete
-and all test suites pass. This prompt verifies the complete system.
+Goal: final reliability pass for the hackathon demo.
 
-## Prerequisites (must all be green before running this prompt)
+Prerequisites:
 
-- test_schema_alignment.py: 5/5 ✅
-- test_output_format.py: 5/5 ✅
-- test_agent_streaming.py: 6/6 ✅
-- test_evaluation_pipeline.py: 5/5 ✅
-- test_early_warning.py: 4/4 ✅
+- Prompt 0.5 completed.
+- Prompt 1 schema/data/test alignment completed.
+- Prompt 2 backend/frontend streaming completed.
+- Prompt 3 evaluation path completed or explicitly blocked by missing API key.
+- Prompt 4 ESA/early-warning integration completed.
 
-## Task 1 — 5x Demo Reliability Check
+Tasks:
 
-Run each of the 3 demo scenarios through analyze_with_rag() exactly 5 times.
-Log results in this table:
+1. Run backend test suite in the safest available form.
+   - Use `pytest` for pytest-compatible files.
+   - Run script-style files directly if they call `sys.exit()` at import time.
 
-| Scenario | Fault Type | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | Pass Rate |
-|---|---|---|---|---|---|---|---|
-| gyro_seu | ADCS_GYRO_SEU | | | | | | |
-| solar_fault | EPS_SOLAR_UNDERVOLT | | | | | | |
-| obc_watchdog | OBC_WATCHDOG_OVERFLOW | | | | | | |
+Suggested commands:
 
-Pass per run (ALL must be true):
-✅ Valid SentinelOutput (no exception)
-✅ Correct root_cause_class in rank-1 hypothesis
-✅ Completed within 90 seconds
-✅ recovery_plan has >= 3 steps
-✅ reasoning_summary is non-empty
-✅ requires_human_review value matches expected (True for obc_watchdog, can be either for others)
+```bash
+venv/bin/python -m pytest sentinel/backend/tests/test_schema_alignment.py -q
+venv/bin/python -m pytest sentinel/backend/tests/test_pipeline.py -q
+venv/bin/python -m pytest sentinel/backend/tests/test_generate_crash_dump.py -q
+venv/bin/python -m pytest sentinel/backend/tests/test_safety.py -q
+venv/bin/python -m pytest sentinel/backend/tests/test_rag.py -q
+venv/bin/python sentinel/backend/tests/test_models.py
 
-Target: 5/5 for all 3 scenarios.
-If < 4/5: investigate and fix before calling done.
 
-## Task 2 — Generate Cached Demo Responses
+2. Run demo scenario reliability.
+   - Use three synthetic scenarios:
+     - ADCS_GYRO_SEU
+     - EPS_SOLAR_UNDERVOLT
+     - OBC_WATCHDOG_OVERFLOW
+   - Run each scenario 5 times if live LLM access is available.
+   - If live LLM access is unavailable, run the path with a deterministic mocked LLM and clearly label it as mocked.
 
-After 5x runs confirm reliability, save one good response for each scenario:
-data/demo_cache/gyro_seu_cached.json
-data/demo_cache/solar_fault_cached.json
-data/demo_cache/obc_watchdog_cached.json
+Pass criteria per run:
 
-These are the BACKUP if live inference fails during the demo.
-The frontend should have a "demo mode" button that loads these instead of
-calling the API.
+- Valid `SentinelOutput`.
+- Rank-1 root cause matches the synthetic ground truth.
+- Completed within 90 seconds.
+- Recovery plan has at least 3 steps.
+- Reasoning summary is non-empty.
+- `requires_human_review` follows safety/confidence rules.
 
-## Task 3 — Run Full Evaluation (4 configs × 20 scenarios)
+3. Generate cache files for demo fallback.
 
-Run run_evaluation.py with each config:
-  python run_evaluation.py --config full --output results/eval_full.json
-  python run_evaluation.py --config no-rag --output results/eval_no_rag.json
-  python run_evaluation.py --config no-safety --output results/eval_no_safety.json
-  python run_evaluation.py --config base-model --output results/eval_base_model.json
+```text
+sentinel/backend/data/demo_cache/gyro_seu_cached.json
+sentinel/backend/data/demo_cache/solar_undervolt_cached.json
+sentinel/backend/data/demo_cache/obc_watchdog_cached.json
+```
 
-Collect results into evaluation_results.json:
-{
-  "run_timestamp": "...",
-  "test_set_size": 20,
-  "configs": {
-    "full_system": {"fault_class_accuracy": X, "recovery_plan_adequacy": X, ...},
-    "no_rag": {...},
-    "no_safety": {...},
-    "base_model": {...}
-  },
-  "ablation_delta": {
-    "rag_contribution": "full - no_rag accuracy delta",
-    "safety_contribution": "full safety_catch_rate vs no_safety",
-    "system_prompt_contribution": "full vs base_model accuracy"
-  },
-  "pitch_summary": "Full system: XX% accuracy, XX% hallucination rate, XXs avg. ..."
-}
+These files should contain valid `SentinelOutput` JSON and enough trace metadata for the frontend to replay.
 
-## Tests to Write
+4. Verify frontend demo modes.
+   - Live Safe-Mode Stream works.
+   - Incident Library works.
+   - Upload/Paste JSON works.
+   - Source type is visible.
+   - ESA examples do not claim confirmed root-cause/recovery labels.
 
-File: test_integration.py
+5. Verify backend routes.
+   - `GET /health`
+   - `GET /api/health`
+   - `GET /scenarios`
+   - `GET /api/scenarios`
+   - `POST /analyze`
+   - `POST /api/analyze`
 
-1. test_demo_scenario_gyro_seu_passes()
-   Generate ADCS_GYRO_SEU crash dump, run analyze_with_rag(), assert pass criteria
+6. Produce final evidence files.
+   - `sentinel/backend/results/evaluation_results.json` if real evaluation was run.
+   - `sentinel/backend/results/demo_reliability.json`.
+   - Screenshots or screen recording paths if frontend was manually verified.
 
-2. test_demo_scenario_solar_fault_passes()
-   Same for EPS_SOLAR_UNDERVOLT
+7. Final pitch guardrails.
+   - Do not say no autonomous recovery exists anywhere.
+   - Say no existing system combines LLM-based causal reasoning, RAG over engineering procedures, safety validation, and auditable recovery generation for spacecraft safe-mode diagnosis.
+   - Do not claim ESA data has root-cause labels.
+   - Do not present fabricated accuracy or ablation numbers.
 
-3. test_demo_scenario_obc_watchdog_passes()
-   Same for OBC_WATCHDOG_OVERFLOW
-   Extra assert: result.requires_human_review == True
+At the end, provide a concise readiness report:
 
-4. test_demo_cache_files_exist()
-   Assert all 3 cached response files exist and are valid SentinelOutput JSON
-
-5. test_stream_endpoint_returns_sse_events()
-   Use FastAPI TestClient with streaming response
-   POST /api/analyze/stream with a crash dump
-   Assert response content-type is text/event-stream
-   Assert at least one "data: " line is returned
-
-Run command: python -m pytest test_integration.py -v
-Expected: 5/5 pass
-
-## Final Checklist Before Submission
-
-- [ ] test_schema_alignment.py: 5/5
-- [ ] test_output_format.py: 5/5
-- [ ] test_agent_streaming.py: 6/6
-- [ ] test_evaluation_pipeline.py: 5/5
-- [ ] test_early_warning.py: 4/4
-- [ ] test_integration.py: 5/5
-- [ ] Demo scenarios: 15/15 (5 runs × 3 scenarios)
-- [ ] evaluation_results.json exists with real numbers
-- [ ] Demo cache files exist (3 files)
-- [ ] GitHub repo has clean README, setup instructions, architecture diagram
-- [ ] main.py /api/analyze/stream endpoint verified working
-- [ ] /api/health returns 200
+- Tests passed.
+- Demo modes verified.
+- Live LLM evaluation status.
+- Known risks.
+- Exact next command to start backend.
+- Exact next command to start frontend.
 ```
 
 ---
 
----
+## Summary Table
 
-## SUMMARY TABLE
+| Prompt | Main Goal | Primary Files |
+|---|---|---|
+| 0.5 | Post-restructure contract audit | `sentinel/backend/app/*`, `sentinel/backend/simulation/*`, `sentinel/frontend/src/App.jsx` |
+| 1 | Schema, prompt, generated labels, tests | `models.py`, `prompts.py`, `fault_simulator.py`, `dataset_generator.py`, `tests/`, `data/*.jsonl` |
+| 2 | API streaming and frontend integration | `app/main.py`, `agent.py`, `api/models.py`, `frontend/src/App.jsx` |
+| 3 | Evaluation and ablations | `app/analytics/evaluator.py`, `app/analytics/run_evaluation.py`, `agent.py` |
+| 4 | ESA telemetry and early warning | `data_tools/esa_adb_crash_dump.py`, `data/esa_crash_dumps/`, `app/analytics/early_warning.py` |
+| 5 | Demo reliability and submission hardening | backend tests, frontend demo, demo cache, results files |
 
-| Prompt | File Changed | Issue Fixed | Tests |
-|---|---|---|---|
-| 0 | fault_simulator.py, evaluator.py, dataset_generator.py | Fault type name triple mismatch | test_schema_alignment.py (5 tests) |
-| 1 | prompts.py OUTPUT_FORMAT | Missing affected_component in schema shown to LLM | test_output_format.py (5 tests) |
-| 2 | agent.py, main.py | Missing SSE streaming, no timeout enforcement, no graceful failure | test_agent_streaming.py (6 tests) |
-| 3 | evaluator.py, run_evaluation.py | Evaluation pipeline disconnect, missing should_be_safe metric | test_evaluation_pipeline.py (5 tests) |
-| 4 | early_warning.py (new), test_esa_integration.py | ESA data integration, early warning predictor | test_early_warning.py (4 tests) |
-| 5 | demo_cache/ (new files), evaluation_results.json | Demo reliability, 4-config ablation, submission readiness | test_integration.py (5 tests) |
+## Current Leader Notes
 
-**Total new tests: 30 tests across 6 files**
+The correct hackathon presentation is hybrid:
+
+- Synthetic safe-mode incidents prove full root-cause and recovery-plan capability because they have labels.
+- ESA-ADB incidents prove the system can ingest real spacecraft telemetry and anomaly labels.
+- The live stream is the best frontend story.
+- The incident library is the reliability fallback.
+- Upload JSON is the judge-question escape hatch.

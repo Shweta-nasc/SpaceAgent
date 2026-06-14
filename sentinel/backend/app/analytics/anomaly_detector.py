@@ -461,7 +461,7 @@ if __name__ == "__main__":
         "ADCS_GYRO_SEU",
         "OBC_WATCHDOG_OVERFLOW",
         "TCS_THERMAL_RUNAWAY",
-        "COMMS_FAULT",
+        "COMMS_TRANSPONDER_LOSS",
         "MULTI_CASCADE",
     ]
 

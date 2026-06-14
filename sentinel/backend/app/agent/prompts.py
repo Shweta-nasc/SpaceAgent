@@ -194,7 +194,7 @@ Required schema:
   "hypotheses": [
     {
       "rank": 1,
-      "root_cause": "<FAULT_CLASS — e.g. EPS_POWER_FAULT, ADCS_GYRO_SEU>",
+      "root_cause": "<FAULT_CLASS — e.g. EPS_SOLAR_UNDERVOLT, ADCS_GYRO_SEU>",
       "affected_component": "<COMPONENT — e.g. SOLAR_ARRAY_A, GYRO_A>",
       "confidence": <float 0.0–1.0>,
       "causal_chain": [
