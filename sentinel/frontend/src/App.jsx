@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import "./App.css";
 
-const BACKEND_URL = "http://localhost:8000";
+// Backend URL: reads from .env (REACT_APP_BACKEND_URL) at build time,
+// falls back to window.SENTINEL_BACKEND_URL set by public/config.js at runtime,
+// and finally to localhost for local development.
+const BACKEND_URL =
+  process.env.REACT_APP_BACKEND_URL ||
+  (typeof window !== "undefined" && window.SENTINEL_BACKEND_URL) ||
+  "http://localhost:8000";
 
 // Robust local preset scenarios to fall back on if backend is starting up or unreachable
 const LOCAL_PRESET_SCENARIOS = [

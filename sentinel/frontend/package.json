@@ -10,9 +10,10 @@
     "serve": "^14.2.3"
   },
   "scripts": {
-    "dev": "npx serve . -l 3000 --no-clipboard",
-    "start": "react-scripts start",
-    "build": "react-scripts build",
+    "generate-config": "node scripts/generate-config.js",
+    "dev": "node scripts/generate-config.js && npx serve . -l 3000 --no-clipboard",
+    "start": "node scripts/generate-config.js && react-scripts start",
+    "build": "node scripts/generate-config.js && DISABLE_ESLINT_PLUGIN=true react-scripts build",
     "test": "react-scripts test --env=jsdom",
     "eject": "react-scripts eject"
   },

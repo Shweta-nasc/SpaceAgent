@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SENTINEL — AI Spacecraft Recovery Copilot</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<!-- Runtime config: sets window.SENTINEL_BACKEND_URL from .env via generate-config.js -->
+<script src="/config.js"></script>
 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
@@ -2987,9 +2989,9 @@ const AI_TRACES = {
 let invRunning = false, invTimers = [];
 let useLiveBackend = false;
 // 🔌 INTEGRATION POINT 1 — BACKEND URL
-// Ask P4 for the deployed backend URL (e.g. https://sentinel-api.fly.dev)
-// Replace 'http://localhost:8000' with P4's production URL before demo
-const BACKEND_URL = 'http://localhost:8000';
+// Backend URL is set at deploy time via .env → scripts/generate-config.js → /config.js
+// To change: update sentinel/frontend/.env then run: npm run generate-config
+const BACKEND_URL = (typeof window !== 'undefined' && window.SENTINEL_BACKEND_URL) || 'http://localhost:8000';
  
 function toggleBackend() {
   useLiveBackend = !useLiveBackend;
