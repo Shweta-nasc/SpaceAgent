@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "buildCommand": "node scripts/generate-config.js",
+  "outputDirectory": ".",
+  "installCommand": "npm install",
+  "routes": [
+    { "src": "/config.js", "dest": "/config.js" },
+    { "src": "/assets/(.*)", "dest": "/assets/$1" },
+    { "src": "/dashboard/static/(.*)", "dest": "/dashboard/static/$1" },
+    { "src": "/dashboard/(.*)", "dest": "/dashboard/index.html" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    }
+  ]
+}
