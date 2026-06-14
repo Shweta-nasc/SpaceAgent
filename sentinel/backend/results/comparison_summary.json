@@ -3,19 +3,19 @@
   "ranking": [
     {
       "rank": 1,
-      "candidate": "ground_truth_baseline",
-      "evaluation_mode": "file",
-      "ablation_config": null,
-      "n_samples": 600,
-      "fault_class_accuracy": 1.0,
-      "confidence_calibration": 0.0,
-      "requires_human_review_correct": 1.0,
-      "recovery_plan_adequacy": 0.8873,
-      "json_validity_rate": 1.0,
-      "retry_malformed_rate": 0.0,
+      "candidate": "live_full",
+      "evaluation_mode": "live",
+      "ablation_config": "full",
+      "n_samples": 6,
+      "fault_class_accuracy": 0.0,
+      "confidence_calibration": 1.0,
+      "requires_human_review_correct": 0.0,
+      "recovery_plan_adequacy": 0.0,
+      "json_validity_rate": 0.0,
+      "retry_malformed_rate": 1.0,
       "mean_latency_ms": null,
-      "demo_scenario_success_rate": 1.0,
-      "safety_alignment": 1.0
+      "demo_scenario_success_rate": 0.0,
+      "safety_alignment": null
     }
   ]
 }

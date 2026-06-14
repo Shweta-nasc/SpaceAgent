@@ -1,0 +1,54 @@
+{
+  "scenario_id": 201,
+  "timestamp": "2002-05-12T01:55:45.540Z",
+  "fault_type": "ESA_ADB_ANOMALY",
+  "fault_register": "ESA_LABEL:id_82;CLASS:Anomaly;SUBCLASS:subclass_1",
+  "safe_mode_trigger": "ESA_ADB_LABEL",
+  "incident_id": "ESA-Mission1-id_82",
+  "source_type": "Real ESA Telemetry",
+  "source_note": "Real anonymized telemetry from ESA Anomaly Detection Benchmark (Mission 1, id_82). Category=Anomaly, Class=Anomaly. Channel names are anonymized; no root-cause label available.",
+  "pre_fault_telemetry": [
+    {
+      "parameter": "channel_29",
+      "value": 0.91482,
+      "nominal_min": 0.796886,
+      "nominal_max": 0.84906
+    },
+    {
+      "parameter": "channel_21",
+      "value": 0.973647,
+      "nominal_min": 0.750459,
+      "nominal_max": 0.808177
+    },
+    {
+      "parameter": "channel_14",
+      "value": 0.122548,
+      "nominal_min": 0.809082,
+      "nominal_max": 0.831832
+    }
+  ],
+  "event_log": [
+    {
+      "timestamp": "T+0s",
+      "source": "ESA_ADB_LABEL",
+      "message": "id_82 labelled Anomaly starts; class=Anomaly, subclass=subclass_1"
+    },
+    {
+      "timestamp": "T+20430s",
+      "source": "ESA_ADB_LABEL",
+      "message": "id_82 labelled interval ends; dimensionality=Multivariate, locality=Local, length=Subsequence"
+    }
+  ],
+  "hardware_state": {
+    "last_reset_cause": "NOT_PROVIDED_BY_ESA_ADB",
+    "watchdog_status": "NOT_PROVIDED_BY_ESA_ADB"
+  },
+  "operating_context": {
+    "source_dataset": "ESA Anomaly Dataset / ESA-ADB",
+    "mission_folder": "ESA-Mission1",
+    "label_id": "id_82",
+    "eclipse_fraction": null,
+    "sun_sensor_angle_deg": null,
+    "time_since_contact_s": null
+  }
+}

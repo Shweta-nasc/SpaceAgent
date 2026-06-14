@@ -1,0 +1,84 @@
+{
+  "scenario_id": 202,
+  "timestamp": "2002-06-23T15:23:55.254Z",
+  "fault_type": "ESA_ADB_ANOMALY",
+  "fault_register": "ESA_LABEL:id_84;CLASS:Anomaly;SUBCLASS:subclass_1",
+  "safe_mode_trigger": "ESA_ADB_LABEL",
+  "incident_id": "ESA-Mission1-id_84",
+  "source_type": "Real ESA Telemetry",
+  "source_note": "Real anonymized telemetry from ESA Anomaly Detection Benchmark (Mission 1, id_84). Category=Anomaly, Class=Anomaly. Channel names are anonymized; no root-cause label available.",
+  "pre_fault_telemetry": [
+    {
+      "parameter": "channel_51",
+      "value": 0.3228,
+      "nominal_min": 0.812863,
+      "nominal_max": 0.884182
+    },
+    {
+      "parameter": "channel_41",
+      "value": 0.275228,
+      "nominal_min": 0.760318,
+      "nominal_max": 0.830364
+    },
+    {
+      "parameter": "channel_52",
+      "value": 0.148375,
+      "nominal_min": 0.752941,
+      "nominal_max": 0.78896
+    },
+    {
+      "parameter": "channel_43",
+      "value": 0.20411,
+      "nominal_min": 0.73524,
+      "nominal_max": 0.798988
+    },
+    {
+      "parameter": "channel_44",
+      "value": 0.096926,
+      "nominal_min": 0.739233,
+      "nominal_max": 0.814757
+    },
+    {
+      "parameter": "channel_49",
+      "value": 0.090104,
+      "nominal_min": 0.801005,
+      "nominal_max": 0.867565
+    },
+    {
+      "parameter": "channel_46",
+      "value": 0.402979,
+      "nominal_min": 0.80847,
+      "nominal_max": 0.85254
+    },
+    {
+      "parameter": "channel_50",
+      "value": 0.973107,
+      "nominal_min": 0.808,
+      "nominal_max": 0.880582
+    }
+  ],
+  "event_log": [
+    {
+      "timestamp": "T+0s",
+      "source": "ESA_ADB_LABEL",
+      "message": "id_84 labelled Anomaly starts; class=Anomaly, subclass=subclass_1"
+    },
+    {
+      "timestamp": "T+16140s",
+      "source": "ESA_ADB_LABEL",
+      "message": "id_84 labelled interval ends; dimensionality=Multivariate, locality=Global, length=Subsequence"
+    }
+  ],
+  "hardware_state": {
+    "last_reset_cause": "NOT_PROVIDED_BY_ESA_ADB",
+    "watchdog_status": "NOT_PROVIDED_BY_ESA_ADB"
+  },
+  "operating_context": {
+    "source_dataset": "ESA Anomaly Dataset / ESA-ADB",
+    "mission_folder": "ESA-Mission1",
+    "label_id": "id_84",
+    "eclipse_fraction": null,
+    "sun_sensor_angle_deg": null,
+    "time_since_contact_s": null
+  }
+}
