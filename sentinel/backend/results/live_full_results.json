@@ -1,0 +1,141 @@
+{
+  "candidate": "live_full",
+  "n_samples": 6,
+  "fault_class_accuracy": 0.0,
+  "confidence_calibration": 1.0,
+  "requires_human_review_correct": 0.0,
+  "recovery_plan_adequacy": 0.0,
+  "json_validity_rate": 0.0,
+  "retry_malformed_rate": 1.0,
+  "mean_latency_ms": null,
+  "demo_scenario_success_rate": 0.0,
+  "per_fault_type": {
+    "EPS_SOLAR_UNDERVOLT": {
+      "n": 1,
+      "fault_class_accuracy": 0.0,
+      "confidence_calibration": 1.0,
+      "review_flag_correct": 0.0,
+      "recovery_plan_adequacy": 0.0,
+      "json_validity_rate": 0.0,
+      "demo_scenario_pass_rate": 0.0
+    },
+    "ADCS_GYRO_SEU": {
+      "n": 1,
+      "fault_class_accuracy": 0.0,
+      "confidence_calibration": 1.0,
+      "review_flag_correct": 0.0,
+      "recovery_plan_adequacy": 0.0,
+      "json_validity_rate": 0.0,
+      "demo_scenario_pass_rate": 0.0
+    },
+    "OBC_WATCHDOG_OVERFLOW": {
+      "n": 1,
+      "fault_class_accuracy": 0.0,
+      "confidence_calibration": 1.0,
+      "review_flag_correct": 0.0,
+      "recovery_plan_adequacy": 0.0,
+      "json_validity_rate": 0.0,
+      "demo_scenario_pass_rate": 0.0
+    },
+    "TCS_THERMAL_RUNAWAY": {
+      "n": 1,
+      "fault_class_accuracy": 0.0,
+      "confidence_calibration": 1.0,
+      "review_flag_correct": 0.0,
+      "recovery_plan_adequacy": 0.0,
+      "json_validity_rate": 0.0,
+      "demo_scenario_pass_rate": 0.0
+    },
+    "COMMS_TRANSPONDER_LOSS": {
+      "n": 1,
+      "fault_class_accuracy": 0.0,
+      "confidence_calibration": 1.0,
+      "review_flag_correct": 0.0,
+      "recovery_plan_adequacy": 0.0,
+      "json_validity_rate": 0.0,
+      "demo_scenario_pass_rate": 0.0
+    },
+    "MULTI_CASCADE": {
+      "n": 1,
+      "fault_class_accuracy": 0.0,
+      "confidence_calibration": 1.0,
+      "review_flag_correct": 0.0,
+      "recovery_plan_adequacy": 0.0,
+      "json_validity_rate": 0.0,
+      "demo_scenario_pass_rate": 0.0
+    }
+  },
+  "raw_scores": [
+    {
+      "json_valid": false,
+      "malformed": true,
+      "fault_class_correct": false,
+      "confidence_error": 1.0,
+      "review_flag_correct": false,
+      "recovery_coverage": 0.0,
+      "latency_ms": null,
+      "demo_scenario_pass": false,
+      "true_fault_type": "EPS_SOLAR_UNDERVOLT"
+    },
+    {
+      "json_valid": false,
+      "malformed": true,
+      "fault_class_correct": false,
+      "confidence_error": 1.0,
+      "review_flag_correct": false,
+      "recovery_coverage": 0.0,
+      "latency_ms": null,
+      "demo_scenario_pass": false,
+      "true_fault_type": "ADCS_GYRO_SEU"
+    },
+    {
+      "json_valid": false,
+      "malformed": true,
+      "fault_class_correct": false,
+      "confidence_error": 1.0,
+      "review_flag_correct": false,
+      "recovery_coverage": 0.0,
+      "latency_ms": null,
+      "demo_scenario_pass": false,
+      "true_fault_type": "OBC_WATCHDOG_OVERFLOW"
+    },
+    {
+      "json_valid": false,
+      "malformed": true,
+      "fault_class_correct": false,
+      "confidence_error": 1.0,
+      "review_flag_correct": false,
+      "recovery_coverage": 0.0,
+      "latency_ms": null,
+      "demo_scenario_pass": false,
+      "true_fault_type": "TCS_THERMAL_RUNAWAY"
+    },
+    {
+      "json_valid": false,
+      "malformed": true,
+      "fault_class_correct": false,
+      "confidence_error": 1.0,
+      "review_flag_correct": false,
+      "recovery_coverage": 0.0,
+      "latency_ms": null,
+      "demo_scenario_pass": false,
+      "true_fault_type": "COMMS_TRANSPONDER_LOSS"
+    },
+    {
+      "json_valid": false,
+      "malformed": true,
+      "fault_class_correct": false,
+      "confidence_error": 1.0,
+      "review_flag_correct": false,
+      "recovery_coverage": 0.0,
+      "latency_ms": null,
+      "demo_scenario_pass": false,
+      "true_fault_type": "MULTI_CASCADE"
+    }
+  ],
+  "evaluation_mode": "live",
+  "ablation_config": "full",
+  "config_description": "Full pipeline: anomaly detector + PDF RAG + safety validator",
+  "n_failed": 6,
+  "simulator_seed": 42
+}

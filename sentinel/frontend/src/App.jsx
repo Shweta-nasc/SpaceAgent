@@ -99,6 +99,68 @@ const LOCAL_PRESET_SCENARIOS = [
     }
   },
   {
+    "scenario_id": 5,
+    "fault_type": "TCS_THERMAL_RUNAWAY",
+    "source_type": "Synthetic Safe Mode",
+    "fault_register": "0x00000100",
+    "pre_fault_telemetry": [
+      {"parameter": "OBC_temp_C", "value": 62.5, "nominal_min": -10.0, "nominal_max": 60.0},
+      {"parameter": "Panel_temp_C", "value": 78.0, "nominal_min": -40.0, "nominal_max": 70.0},
+      {"parameter": "Battery_temp_C", "value": 48.2, "nominal_min": 0.0, "nominal_max": 45.0},
+      {"parameter": "Heater_power_W", "value": 0.0, "nominal_min": 0.0, "nominal_max": 50.0},
+      {"parameter": "Radiator_eff_pct", "value": 12.0, "nominal_min": 60.0, "nominal_max": 100.0},
+      {"parameter": "V_bat", "value": 29.5, "nominal_min": 28.0, "nominal_max": 33.6},
+      {"parameter": "SoC_pct", "value": 72.0, "nominal_min": 20.0, "nominal_max": 100.0}
+    ],
+    "event_log": [
+      {"timestamp": "T-600s", "source": "TCS_MONITOR", "message": "Radiator efficiency dropped below 20% (12.0%)"},
+      {"timestamp": "T-300s", "source": "TCS_MANAGER", "message": "Panel temperature rising: 78.0°C (limit: 70°C)"},
+      {"timestamp": "T-60s", "source": "TCS_MANAGER", "message": "OBC temperature critical: 62.5°C (limit: 60°C). Heaters disabled."},
+      {"timestamp": "T-0s", "source": "FDIR_CORE", "message": "Safe Mode entry triggered by TCS_OVERTEMP"}
+    ],
+    "hardware_state": {
+      "heater_zones_active": 0,
+      "radiator_state": "degraded",
+      "louver_position": "fully_open"
+    },
+    "operating_context": {
+      "eclipse_fraction": 0.0,
+      "sun_sensor_angle_deg": 5.0,
+      "time_since_contact_s": 800
+    }
+  },
+  {
+    "scenario_id": 6,
+    "fault_type": "COMMS_TRANSPONDER_LOSS",
+    "source_type": "Synthetic Safe Mode",
+    "fault_register": "0x00000200",
+    "pre_fault_telemetry": [
+      {"parameter": "RF_power_dBm", "value": -102.0, "nominal_min": -95.0, "nominal_max": -70.0},
+      {"parameter": "Bit_error_rate", "value": 0.08, "nominal_min": 0.0, "nominal_max": 0.001},
+      {"parameter": "Transponder_temp_C", "value": 55.0, "nominal_min": -10.0, "nominal_max": 50.0},
+      {"parameter": "Link_margin_dB", "value": -3.5, "nominal_min": 3.0, "nominal_max": 20.0},
+      {"parameter": "Antenna_pointing_error_deg", "value": 4.2, "nominal_min": 0.0, "nominal_max": 1.0},
+      {"parameter": "V_bat", "value": 30.8, "nominal_min": 28.0, "nominal_max": 33.6},
+      {"parameter": "SoC_pct", "value": 88.0, "nominal_min": 20.0, "nominal_max": 100.0}
+    ],
+    "event_log": [
+      {"timestamp": "T-900s", "source": "COMMS_MONITOR", "message": "RF signal strength degrading: -92 dBm (threshold: -95 dBm)"},
+      {"timestamp": "T-600s", "source": "COMMS_MANAGER", "message": "Bit error rate elevated: 0.08 (nominal: <0.001)"},
+      {"timestamp": "T-120s", "source": "COMMS_TRANSPONDER", "message": "Transponder lock lost. Switching to backup receiver."},
+      {"timestamp": "T-0s", "source": "FDIR_CORE", "message": "Safe Mode entry triggered by COMMS_LOSS. Autonomous beacon mode activated."}
+    ],
+    "hardware_state": {
+      "transponder_state": "no_lock",
+      "antenna_mode": "omni_fallback",
+      "backup_receiver": "active"
+    },
+    "operating_context": {
+      "eclipse_fraction": 0.35,
+      "sun_sensor_angle_deg": 28.0,
+      "time_since_contact_s": 7200
+    }
+  },
+  {
     "scenario_id": 4,
     "fault_type": "ESA_ADB_ANOMALY",
     "source_type": "Real ESA Telemetry",
