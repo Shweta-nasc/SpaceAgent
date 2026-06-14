@@ -2991,7 +2991,10 @@ let useLiveBackend = false;
 // 🔌 INTEGRATION POINT 1 — BACKEND URL
 // Backend URL is set at deploy time via .env → scripts/generate-config.js → /config.js
 // To change: update sentinel/frontend/.env then run: npm run generate-config
-const BACKEND_URL = (typeof window !== 'undefined' && window.SENTINEL_BACKEND_URL) || 'http://localhost:8000';
+const BACKEND_URL = (typeof window !== 'undefined' && window.SENTINEL_BACKEND_URL) || 'http://localhost:8005';
+console.log('[SENTINEL] BACKEND_URL resolved to:', BACKEND_URL,
+  '| source:', (window.SENTINEL_BACKEND_URL ? 'config.js ✅' : 'fallback hardcode ⚠️'));
+ 
  
 function toggleBackend() {
   useLiveBackend = !useLiveBackend;
