@@ -1,3 +1,15 @@
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env from sentinel/.env (one level above backend/)
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+for _env_path in [_BACKEND_DIR / ".env", _BACKEND_DIR.parent / ".env"]:
+    if _env_path.is_file():
+        load_dotenv(_env_path, override=False)
+        break
+
 import asyncio
 import json
 import logging
@@ -9,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from app.agent.agent import SentinelAgent
-from app.api.scenarios import get_preset_scenarios
+from app.api.scenarios import get_all_scenarios
 from app.api.models import SSEEvent, SSEEventType, CrashDumpRequest
 
 # ---------------------------------------------------------------------------
@@ -58,7 +70,7 @@ def health_check():
 @app.get("/api/scenarios")
 def get_scenarios():
     """Return the pre-defined crash dump scenarios for the demo UI."""
-    return get_preset_scenarios()
+    return get_all_scenarios()
 
 
 @app.get("/api/analyze")

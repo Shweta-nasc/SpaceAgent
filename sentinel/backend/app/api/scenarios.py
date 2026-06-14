@@ -7,11 +7,20 @@ CrashDumpRequest schema defined in models.py.
 Each scenario is a complete dict that FastAPI can validate against
 CrashDumpRequest.  The frontend fetches these via GET /scenarios and
 renders them in the scenario selector dropdown.
+
+Scenario types:
+  - ``Synthetic Safe Mode``: synthetically generated from fault_simulator.py
+  - ``Real ESA Telemetry``: built from ESA-ADB Mission1 using data_tools/
 """
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def get_preset_scenarios() -> list[dict[str, Any]]:
@@ -20,12 +29,18 @@ def get_preset_scenarios() -> list[dict[str, Any]]:
     Each entry mirrors the CrashDumpRequest schema.  Legacy fields
     (pre_fault_telemetry, event_log, hardware_state, operating_context)
     are preserved so the existing frontend renders them correctly.
+
+    Fields added for provenance transparency:
+      - ``source_type``: Human-readable source label shown in the UI dropdown.
+      - ``source_note``: One-sentence provenance disclaimer.
     """
     return [
         # ── Scenario 1: ADCS Gyroscope SEU ────────────────────────────────
         {
             "scenario_id": 1,
             "fault_type": "ADCS_GYRO_SEU",
+            "source_type": "Synthetic Safe Mode",
+            "source_note": "Synthetically generated crash dump modelled on ECSS-E-ST-70-11C SEU fault signatures.",
             "incident_id": "INC-2026-0001",
             "fault_register": "0x00000080",
             "safe_mode_trigger": "ADCS_ERROR",
@@ -94,6 +109,8 @@ def get_preset_scenarios() -> list[dict[str, Any]]:
         {
             "scenario_id": 2,
             "fault_type": "EPS_SOLAR_UNDERVOLT",
+            "source_type": "Synthetic Safe Mode",
+            "source_note": "Synthetically generated crash dump modelled on solar array undervoltage profiles from ESA ADB data.",
             "incident_id": "INC-2026-0002",
             "fault_register": "0x00000002",
             "safe_mode_trigger": "EPS_UNDER_VOLT",
@@ -159,6 +176,8 @@ def get_preset_scenarios() -> list[dict[str, Any]]:
         {
             "scenario_id": 3,
             "fault_type": "OBC_WATCHDOG_OVERFLOW",
+            "source_type": "Synthetic Safe Mode",
+            "source_note": "Synthetically generated crash dump based on watchdog timer overflow patterns documented in ECSS-E-ST-40C.",
             "incident_id": "INC-2026-0003",
             "fault_register": "0x00000040",
             "safe_mode_trigger": "WATCHDOG_RESET",
@@ -216,4 +235,130 @@ def get_preset_scenarios() -> list[dict[str, Any]]:
                 "time_since_contact_s": 50,
             },
         },
+        # ── Scenario 4: Real ESA-ADB Anomaly (id_109) ─────────────────────
+        {
+            "scenario_id": 4,
+            "fault_type": "ESA_ADB_ANOMALY",
+            "source_type": "Real ESA Telemetry",
+            "source_note": (
+                "Real anonymized telemetry from ESA Anomaly Detection Benchmark (Mission 1, id_109). "
+                "Channel names are anonymized; no root-cause label or recovery command is available. "
+                "Do NOT claim this as a confirmed safe-mode crash or a confirmed subsystem root cause."
+            ),
+            "incident_id": "ESA-Mission1-id_109",
+            "fault_register": "ESA_LABEL:id_109;CLASS:class_3;SUBCLASS:subclass_2",
+            "safe_mode_trigger": "ESA_ADB_LABEL",
+            "telecommand_context": {
+                "event_id": 109,
+                "telecommand": "telecommand_12",
+                "execution_timestamp": "2006-09-25T19:55:49Z",
+                "gap_seconds": None,
+                "gap_classification": "not_provided",
+                "gap_percentile": None,
+                "anomaly_flag": True,
+            },
+            "pre_fault_telemetry_window": [
+                {"timestamp": "T-593s", "parameter": "channel_41",
+                 "value": 0.816503, "status": "NOMINAL"},
+                {"timestamp": "T-593s", "parameter": "channel_42",
+                 "value": 0.772688, "status": "NOMINAL"},
+                {"timestamp": "T+0s", "parameter": "channel_41",
+                 "value": 0.960135, "status": "LABELLED_ANOMALY"},
+                {"timestamp": "T+0s", "parameter": "channel_42",
+                 "value": 0.0, "status": "LABELLED_ANOMALY"},
+                {"timestamp": "T+0s", "parameter": "channel_43",
+                 "value": 0.93332, "status": "LABELLED_ANOMALY"},
+                {"timestamp": "T+0s", "parameter": "channel_44",
+                 "value": 0.947167, "status": "LABELLED_ANOMALY"},
+                {"timestamp": "T+0s", "parameter": "channel_45",
+                 "value": 0.977107, "status": "LABELLED_ANOMALY"},
+                {"timestamp": "T+0s", "parameter": "channel_46",
+                 "value": 0.95193, "status": "LABELLED_ANOMALY"},
+                {"timestamp": "T+67s", "parameter": "channel_41",
+                 "value": 0.80316, "status": "NOMINAL"},
+            ],
+            "pre_fault_telemetry": [
+                {"parameter": "channel_41", "value": 0.960135,
+                 "nominal_min": 0.797548, "nominal_max": 0.82607},
+                {"parameter": "channel_42", "value": 0.0,
+                 "nominal_min": 0.764285, "nominal_max": 0.806006},
+                {"parameter": "channel_43", "value": 0.93332,
+                 "nominal_min": 0.758193, "nominal_max": 0.786285},
+                {"parameter": "channel_44", "value": 0.947167,
+                 "nominal_min": 0.780812, "nominal_max": 0.815033},
+                {"parameter": "channel_45", "value": 0.977107,
+                 "nominal_min": 0.797574, "nominal_max": 0.829473},
+                {"parameter": "channel_46", "value": 0.95193,
+                 "nominal_min": 0.747717, "nominal_max": 0.78975},
+            ],
+            "event_log": [
+                {"timestamp": "T+0s", "source": "ESA_ADB_LABEL",
+                 "message": "id_109 labelled Anomaly starts; class=class_3"},
+                {"timestamp": "T+7s", "source": "ESA_ADB_LABEL",
+                 "message": "id_109 labelled interval ends"},
+            ],
+            "hardware_state": {
+                "last_reset_cause": "NOT_PROVIDED_BY_ESA_ADB",
+                "watchdog_status": "NOT_PROVIDED_BY_ESA_ADB",
+            },
+            "operating_context": {
+                "source_dataset": "ESA Anomaly Dataset / ESA-ADB",
+                "mission_folder": "ESA-Mission1",
+                "label_id": "id_109",
+                "eclipse_fraction": None,
+                "sun_sensor_angle_deg": None,
+                "time_since_contact_s": None,
+            },
+        },
     ]
+
+
+def _load_esa_scenarios_from_disk() -> list[dict[str, Any]]:
+    """Dynamically load ESA crash dump JSONs from data/esa_crash_dumps/.
+
+    Returns additional scenario dicts built from compact sentinel-only
+    crash dump files. These supplement the hardcoded id_109 above.
+    Errors are logged but never crash the server.
+    """
+    esa_dir = os.path.join(
+        os.path.dirname(__file__), "..", "..", "data", "esa_crash_dumps"
+    )
+    if not os.path.isdir(esa_dir):
+        return []
+
+    extra: list[dict[str, Any]] = []
+    for fname in sorted(os.listdir(esa_dir)):
+        if not fname.endswith("_sentinel_only.json"):
+            continue
+        # Skip id_109 — already hardcoded above
+        if "id_109" in fname:
+            continue
+        try:
+            with open(os.path.join(esa_dir, fname), "r", encoding="utf-8") as fh:
+                dump = json.load(fh)
+            dump["source_type"] = "Real ESA Telemetry"
+            dump["source_note"] = (
+                f"Real anonymized telemetry from ESA-ADB ({fname}). "
+                "No root-cause label available."
+            )
+            extra.append(dump)
+        except Exception as exc:
+            logger.warning("Failed to load ESA scenario %s: %s", fname, exc)
+
+    return extra
+
+
+def get_all_scenarios() -> list[dict[str, Any]]:
+    """Return preset + dynamically loaded ESA scenarios.
+
+    This is the preferred public API. Falls back to just presets
+    if ESA loading fails.
+    """
+    presets = get_preset_scenarios()
+    try:
+        esa_extra = _load_esa_scenarios_from_disk()
+        return presets + esa_extra
+    except Exception as exc:
+        logger.warning("ESA dynamic loader failed: %s", exc)
+        return presets
+

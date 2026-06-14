@@ -15,13 +15,12 @@ dist/
 *.log
 
 # Data
-demo_cache/
-evaluation/
-backend/data/ecss/*.pdf
+
+
 ESA-Mission*/
 ESA-Mission*_extracted/
-sentinel/backend/data/esa_raw/
 
-*.bin
-*.pickle
-*.sqlite3
+
+
+
+
