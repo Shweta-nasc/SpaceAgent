@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>SENTINEL — AI Spacecraft Recovery Copilot</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <!-- Runtime config: sets window.SENTINEL_BACKEND_URL from .env via generate-config.js -->
@@ -2991,7 +2992,9 @@ let useLiveBackend = false;
 // 🔌 INTEGRATION POINT 1 — BACKEND URL
 // Backend URL is set at deploy time via .env → scripts/generate-config.js → /config.js
 // To change: update sentinel/frontend/.env then run: npm run generate-config
-const BACKEND_URL = (typeof window !== 'undefined' && window.SENTINEL_BACKEND_URL) || 'http://localhost:8000';
+const BACKEND_URL = (typeof window !== 'undefined' && window.SENTINEL_BACKEND_URL) || 'http://localhost:8001';
+console.log('[SENTINEL] BACKEND_URL resolved to:', BACKEND_URL,
+  '| source:', (window.SENTINEL_BACKEND_URL ? 'config.js ✅' : 'fallback hardcode ⚠️'));
  
 function toggleBackend() {
   useLiveBackend = !useLiveBackend;
