@@ -18,7 +18,6 @@ SENTINEL uses a **Gemini-first, model-agnostic architecture**. Gemini Flash is t
 | RAG framework | LlamaIndex | PDF loading and chunking |
 | Backend | FastAPI + Uvicorn | Lightweight, async-ready |
 | Frontend | React + Vite | Fast dev server |
-| Orchestration | Simple function chain (LangGraph-ready) | Hackathon-safe |
 
 ### Reasoning Modes
 
@@ -35,50 +34,33 @@ The agent supports three selectable modes in one pipeline:
 ```text
 sentinel/
 ├── README.md
-├── .gitignore
 ├── .env.example          ← GEMINI_API_KEY=your_gemini_key_here
-├── backend/
-│   ├── main.py           ← FastAPI app (Steps 4+5+6 pipeline wired)
-│   ├── agent.py          ← Gemini-first reasoning agent
-│   ├── models.py         ← Pydantic output schema (SentinelOutput)
-│   ├── prompts.py        ← Master system prompt + builders
-│   ├── rag.py            ← Hybrid RAG (PDF RAG + fallback KB)
-│   ├── simulator.py      ← Crash dump generator (SENTINEL schema)
-│   ├── evaluator.py      ← 8-metric evaluation harness
+├── backend/              ← Core Python API and reasoning logic
+│   ├── app/              
+│   │   ├── main.py       ← FastAPI app entrypoint
+│   │   ├── agent/        ← Gemini-first reasoning agent
+│   │   ├── analytics/    ← Anomaly detection
+│   │   └── api/          ← Routes and models (Pydantic schema)
+│   ├── data/             ← ECSS PDF standards & ChromaDB store
+│   ├── simulation/       ← Telemetry generation
+│   ├── tests/            ← Unit and integration tests
 │   ├── requirements.txt
-│   ├── Dockerfile
-│   └── data/ecss/        ← ECSS PDF standards
-├── frontend/             ← React application
-├── notebooks/            ← Kaggle fine-tuning notebooks
+│   └── Dockerfile
+├── frontend/             ← Real-time operator dashboard
+│   ├── public/
+│   ├── src/
+│   └── package.json
+├── notebooks/            ← Kaggle/Jupyter fine-tuning & EDA notebooks
 └── docs/                 ← Architecture diagrams
 ```
 
-## Step Status
-
-| Step | Description | Status |
-|---|---|---|
-| 1 | Pydantic output schema (`models.py`) | ✅ Complete |
-| 2 | Master system prompt (`prompts.py`) | ✅ Complete |
-| 3 | Agent skeleton (`agent.py`) | ✅ Complete |
-| 4 | Fallback KB retrieval (`rag.py`) | ✅ Complete |
-| 5 | Structured output validation (`models.py` + agent retry) | ✅ Complete |
-| 6 | PDF RAG integration (`rag.py` + ChromaDB) | ✅ Complete |
-| 7 | Safety command whitelist (`safety.py`) | ❌ Not yet built |
-| 9+ | LangGraph tool routing | ❌ Future |
-| 11 | SSE streaming endpoint | ❌ Future |
-
 ## Setup
 
-```bash
-pip install -r backend/requirements.txt
-```
-
-Or manually:
+### Backend
 
 ```bash
-pip install google-genai fastapi uvicorn pydantic python-dotenv
-pip install sentence-transformers chromadb llama-index
-pip install numpy scipy httpx
+cd backend
+pip install -r requirements.txt
 ```
 
 ### Environment
@@ -89,7 +71,7 @@ cp .env.example .env
 # GEMINI_API_KEY=your_gemini_key_here
 ```
 
-### Verify
+### Verify Gemini
 
 ```python
 from google import genai
@@ -104,18 +86,15 @@ print(resp.text)
 
 ## Usage
 
-```python
-from agent import SentinelAgent, AgentConfig, ModelMode
+### Core Python Pipeline
 
-# Default: Gemini Flash + RAG (Steps 4+5+6 in one call)
+```python
+from app.agent.agent import SentinelAgent, AgentConfig, ModelMode
+
+# Default: Gemini Flash + RAG
 agent = SentinelAgent()
 result = agent.analyze_with_rag(crash_dump_dict)
 print(result.model_dump_json(indent=2))
-
-# Or manual: retrieve first, then analyze
-from rag import retrieve_procedures
-procedures = retrieve_procedures(query="gyro SEU fault", fault_cues=["GYRO_A_RATE"])
-result = agent.analyze_crash_dump(crash_dump_dict, retrieved_procedures=procedures)
 
 # Tuned model
 config = AgentConfig(mode=ModelMode.TUNED, tuned_model_id="tunedModels/sentinel-v1")
@@ -130,7 +109,7 @@ agent = SentinelAgent(config)
 
 ```bash
 # Start the server
-cd backend && uvicorn main:app --reload
+cd backend && uvicorn app.main:app --reload
 
 # Submit a crash dump
 curl -X POST http://localhost:8000/analyze \
@@ -139,9 +118,6 @@ curl -X POST http://localhost:8000/analyze \
 
 # Health check
 curl http://localhost:8000/health
-
-# RAG status
-curl http://localhost:8000/rag/status
 ```
 
 ## Risks

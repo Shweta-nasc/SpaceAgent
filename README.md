@@ -21,7 +21,7 @@ Modern spacecraft generate massive amounts of telemetry during a fault. When a s
 
 ## 🏗 System Architecture
 
-The project consists of a Python FastAPI backend and a React/Vanilla JS frontend, communicating via REST and Server-Sent Events (SSE).
+The project consists of a Python FastAPI backend and a React frontend, communicating via REST and Server-Sent Events (SSE).
 
 ### Tech Stack
 
@@ -38,30 +38,27 @@ The project consists of a Python FastAPI backend and a React/Vanilla JS frontend
 
 ## 🧠 Code Flow & Execution Pipeline
 
-The core analysis pipeline follows **Steps 4-7** of the internal execution strategy, completely orchestrated by the `SentinelAgent` in the backend.
+The core analysis pipeline is seamlessly orchestrated by the `SentinelAgent` in the backend.
 
 ### 1. Data Intake & Validation
 When the frontend submits a crash dump (`POST /api/analyze`), the payload is validated against rigorous Pydantic schemas in `sentinel/backend/app/api/models.py`.
 
-### 2. Anomaly Detection (`analytics/anomaly_detector.py`)
-A Z-score statistical detector scans the `pre_fault_telemetry_window`. Parameters deviating by $> 3\sigma$ from nominal bounds are flagged as anomalies.
+### 2. Anomaly Detection
+A Z-score statistical detector scans the `pre_fault_telemetry_window`. Parameters deviating significantly from nominal bounds are flagged as anomalies.
 
-### 3. RAG Retrieval (`agent/rag.py`)
+### 3. RAG Retrieval
 The safe-mode trigger and identified anomalies formulate a search query. ChromaDB fetches relevant procedure snippets from standard **ECSS (European Cooperation for Space Standardization)** manuals. 
 
-### 4. LLM Reasoning (`agent/agent.py`)
-The system compiles the crash dump, anomalies, and RAG context into a prompt (`agent/prompts.py`). Depending on the mode, the LLM is queried:
-* **Base:** Gemini Flash via `google-genai`.
-* **Tuned:** Fine-tuned Gemini models.
-* **Fallback:** Local models via an OpenAI-compatible API (e.g., Ollama).
+### 4. LLM Reasoning
+The system compiles the crash dump, anomalies, and RAG context into a prompt. Depending on the configuration, the LLM is queried (Gemini Flash, Tuned Models, or Fallback Models).
 
 ### 5. Structured Output & Retry Logic
 The LLM is required to return a specific JSON schema (`SentinelOutput`). If the LLM generates malformed JSON, the agent automatically retries with a repair prompt.
 
-### 6. Safety Validation (`agent/safety.py`)
+### 6. Safety Validation
 Before the user sees the recovery commands, a deterministic safety layer evaluates the commands against whitelist rules and physical state constraints. High-risk commands are marked as `BLOCKED` or `HIGH` risk.
 
-### 7. SSE Streaming (`api/main.py`)
+### 7. SSE Streaming
 Throughout the entire process, intermediate events (`STATUS`, `THOUGHT`, `OBSERVATION`, `RESULT`) are streamed to the frontend via Server-Sent Events (SSE), creating a real-time, typewriter-like transparency trace.
 
 ---
@@ -71,31 +68,24 @@ Throughout the entire process, intermediate events (`STATUS`, `THOUGHT`, `OBSERV
 ```text
 SpaceAgent/
 ├── README.md                              ← This documentation
-├── SENTINEL_4Day_Master_Planner.md        ← Project planning & timelines
-├── SENTINEL_Hackathon_Strategy_v2.md      ← Deep technical strategy & schema definitions
-├── SENTINEL_Complete_Execution_Prompts.md ← AI generation prompts
-└── sentinel/                              ← The Codebase
-    ├── .env.example                       ← Environment template (GEMINI_API_KEY)
-    ├── backend/
-    │   ├── app/
-    │   │   ├── main.py                    ← FastAPI entrypoint & SSE routes
-    │   │   ├── agent/                     ← Core AI logic
-    │   │   │   ├── agent.py               ← Multi-model routing & retry loop
-    │   │   │   ├── prompts.py             ← System prompt & message builder
-    │   │   │   ├── rag.py                 ← Retrieval-Augmented Generation
-    │   │   │   └── safety.py              ← Deterministic command validation
-    │   │   ├── analytics/                 ← Signal processing (Z-score detection)
-    │   │   └── api/                       
-    │   │       ├── models.py              ← Pydantic schemas (CrashDumpRequest, SentinelOutput)
-    │   │       └── scenarios.py           ← Hardcoded demo scenarios
-    │   ├── data/                          ← ECSS Manuals (PDFs)
-    │   ├── requirements.txt               
-    │   └── Dockerfile
-    ├── frontend/
-    │   ├── index.html                     ← Main operator dashboard
-    │   ├── package.json                   ← Frontend dependencies
-    │   └── src/                           ← React components
-    └── notebooks/                         ← Jupyter notebooks for fine-tuning/evals
+├── ESA-Mission1/                          ← Raw mission data
+├── ESA-Mission1_extracted/                ← Processed mission data
+└── sentinel/                              ← The Core Codebase
+    ├── backend/                           ← Python FastAPI server
+    │   ├── app/                           ← Core application logic
+    │   ├── data/                          ← ECSS Manuals and data assets
+    │   ├── data_tools/                    ← Tooling for data processing
+    │   ├── simulation/                    ← Telemetry generation & simulation
+    │   ├── tests/                         ← Test suites
+    │   ├── Dockerfile
+    │   └── requirements.txt               
+    ├── frontend/                          ← Operator Dashboard (React)
+    │   ├── public/                        ← Static assets
+    │   ├── src/                           ← React components
+    │   ├── package.json                   
+    │   └── package-lock.json
+    ├── notebooks/                         ← Jupyter notebooks for EDA & fine-tuning
+    └── docs/                              ← Architecture diagrams and additional documentation
 ```
 
 ---
@@ -114,7 +104,7 @@ pip install -r backend/requirements.txt
 
 Set up your environment variables:
 ```bash
-cp .env.example .env
+cp sentinel/.env.example sentinel/.env
 ```
 Edit `.env` and add your Google Gemini API key:
 `GEMINI_API_KEY=your_api_key_here`
@@ -179,6 +169,6 @@ curl -X POST http://localhost:8000/analyze \
 ## 🛡 Risk Management & Fallbacks
 
 Sentinel is designed with safety and reliability in mind:
-- **API Outages**: If the Gemini API is down, the system can seamlessly fall back to local models (e.g. Phi-3) using the `FALLBACK` mode in `AgentConfig`.
+- **API Outages**: If the Gemini API is down, the system can seamlessly fall back to local models (e.g. Phi-3) using the `FALLBACK` mode.
 - **Hallucination Prevention**: The deterministic safety validator ensures that even if the LLM hallucinated a dangerous command, it would be flagged and blocked before execution.
-- **Explainability**: The agent never outputs just a command. It is forced by `models.py` to output 3 distinct hypotheses, confidences, causal chains, and step-by-step rationales.
+- **Explainability**: The agent never outputs just a command. It is forced by the Pydantic schema to output 3 distinct hypotheses, confidences, causal chains, and step-by-step rationales.
